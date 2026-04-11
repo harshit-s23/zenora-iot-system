@@ -15,7 +15,7 @@ import 'package:flutter/material.dart';
 import 'package:shared_preferences/shared_preferences.dart';
 import '../services/firebase_service.dart';
 import '../services/fall_detection_service.dart';
-import '../services/haptic_service.dart';
+import '../services/pressure_therapy_service.dart';
 
 class AppProvider extends ChangeNotifier {
   // ─── Real sensor values ────────────────────────────────────────────────────
@@ -273,12 +273,12 @@ class AppProvider extends ChangeNotifier {
     _pressureTherapyCycle = 0;
     notifyListeners();
 
-    await HapticService.instance.startPressureTherapy(
-      onCycleComplete: () {
-        _pressureTherapyCycle++;
+    await PressureTherapyService.instance.start(
+      onUpdate: () {
+        _pressureTherapyCycle = PressureTherapyService.instance.currentCycle;
         notifyListeners();
       },
-      onSessionEnd: () {
+      onComplete: () {
         _isPressureTherapyActive = false;
         _pressureTherapyCycle = 0;
         notifyListeners();
@@ -287,7 +287,7 @@ class AppProvider extends ChangeNotifier {
   }
 
   void stopPressureTherapy() {
-    HapticService.instance.stop();
+    PressureTherapyService.instance.stop();
     _isPressureTherapyActive = false;
     _pressureTherapyCycle = 0;
     notifyListeners();
@@ -454,7 +454,7 @@ class AppProvider extends ChangeNotifier {
   void dispose() {
     _simulationTimer?.cancel();
     _firebaseSub?.cancel();
-    HapticService.instance.dispose();
+    PressureTherapyService.instance.dispose();
     super.dispose();
   }
 }

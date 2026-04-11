@@ -1,31 +1,37 @@
-// ════════════════════════════════════════════════════════════════════════════
-// lib/services/emergency_service.dart
-//
-// Emergency Alert Service
-// • Opens SMS intent with location link (url_launcher)
-// • WhatsApp deep link fallback
-// • Phone call to primary contact
-// All FREE — no paid APIs.
-// ════════════════════════════════════════════════════════════════════════════
-
 import 'package:flutter/foundation.dart';
+import 'package:flutter/services.dart';
 import 'package:url_launcher/url_launcher.dart';
 
 class EmergencyService {
   static final EmergencyService instance = EmergencyService._();
   EmergencyService._();
 
-  /// Send SMS to a single number with the emergency message.
-  Future<bool> sendSms({
-    required String phoneNumber,
-    required String message,
-  }) async {
+  static const _channel = MethodChannel('zenora/emergency');
+
+  Future<bool> makeDirectCall(String phoneNumber) async {
+    final clean = _cleanNumber(phoneNumber);
+    debugPrint('[EmergencyService] Attempting call to: $clean');
+    try {
+      final result =
+          await _channel.invokeMethod<bool>('makeCall', {'number': clean});
+      debugPrint('[EmergencyService] Call result: $result');
+      return result ?? false;
+    } on PlatformException catch (e) {
+      debugPrint(
+          '[EmergencyService] PlatformException: ${e.code} — ${e.message}');
+      return false;
+    } catch (e) {
+      debugPrint('[EmergencyService] Unknown error: $e');
+      return false;
+    }
+  }
+
+  Future<bool> sendSms(
+      {required String phoneNumber, required String message}) async {
     final clean = _cleanNumber(phoneNumber);
     if (clean.isEmpty) return false;
-
     final encoded = Uri.encodeComponent(message);
     final uri = Uri.parse('sms:$clean?body=$encoded');
-
     try {
       if (await canLaunchUrl(uri)) {
         await launchUrl(uri);
@@ -37,17 +43,12 @@ class EmergencyService {
     return false;
   }
 
-  /// Open WhatsApp with pre-filled message for a number.
-  Future<bool> sendWhatsApp({
-    required String phoneNumber,
-    required String message,
-  }) async {
+  Future<bool> sendWhatsApp(
+      {required String phoneNumber, required String message}) async {
     final clean = _cleanNumber(phoneNumber);
     if (clean.isEmpty) return false;
-
     final encoded = Uri.encodeComponent(message);
     final uri = Uri.parse('https://wa.me/$clean?text=$encoded');
-
     try {
       if (await canLaunchUrl(uri)) {
         await launchUrl(uri, mode: LaunchMode.externalApplication);
@@ -59,26 +60,6 @@ class EmergencyService {
     return false;
   }
 
-  /// Place a phone call to the primary contact.
-  Future<bool> callContact(String phoneNumber) async {
-    final clean = _cleanNumber(phoneNumber);
-    if (clean.isEmpty) return false;
-
-    final uri = Uri.parse('tel:$clean');
-    try {
-      if (await canLaunchUrl(uri)) {
-        await launchUrl(uri);
-        return true;
-      }
-    } catch (e) {
-      debugPrint('[EmergencyService] Call error: $e');
-    }
-    return false;
-  }
-
-  /// Trigger full emergency alert sequence:
-  /// 1. SMS to both contacts
-  /// 2. Call to primary contact
   Future<void> triggerFullAlert({
     required String userName,
     required String mapsLink,
@@ -87,20 +68,16 @@ class EmergencyService {
   }) async {
     final message =
         '🚨 Emergency Alert: Fall detected for $userName. Location: $mapsLink';
-
-    if (contact1.isNotEmpty) {
+    if (contact1.isNotEmpty)
       await sendSms(phoneNumber: contact1, message: message);
-    }
-    if (contact2.isNotEmpty) {
+    if (contact2.isNotEmpty)
       await sendSms(phoneNumber: contact2, message: message);
-    }
     if (contact1.isNotEmpty) {
-      await Future.delayed(const Duration(milliseconds: 800));
-      await callContact(contact1);
+      await Future.delayed(const Duration(seconds: 1));
+      await makeDirectCall(contact1);
     }
   }
 
-  String _cleanNumber(String number) {
-    return number.replaceAll(RegExp(r'[\s\-\(\)]'), '');
-  }
+  String _cleanNumber(String number) =>
+      number.replaceAll(RegExp(r'[\s\-\(\)]'), '');
 }

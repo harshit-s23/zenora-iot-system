@@ -17,10 +17,11 @@ dependencies:
   # ── Firebase ────────────────────────────────────────────────────────────────
   firebase_core: ^3.6.0
   firebase_database: ^11.1.4
-  # ── NEW FEATURES ────────────────────────────────────────────────────────────
+  # ── New Features ────────────────────────────────────────────────────────────
   vibration: ^2.0.0          # Pressure therapy haptic patterns
-  geolocator: ^13.0.1        # GPS location for fall detection (FREE)
-  url_launcher: ^6.3.0       # SMS / phone call / WhatsApp launch
+  geolocator: ^13.0.1        # GPS for fall detection
+  url_launcher: ^6.3.0       # SMS / call / WhatsApp
+  http: ^1.2.0               # ESP32 hardware communication
 
 dev_dependencies:
   flutter_test:

@@ -1,3 +1,12 @@
+// ════════════════════════════════════════════════════════════════════════════
+// lib/screens/home_screen.dart  [EXTENDED — v3]
+//
+// CHANGES FROM V2:
+//   • FallAlertBanner inserted after DemoModeBanner
+//   • "Simulate Fall" demo button in AppBar actions
+//   • Pressure Therapy recommendation tile when stress > 75
+// ════════════════════════════════════════════════════════════════════════════
+
 import 'package:flutter/material.dart';
 import 'package:provider/provider.dart';
 import '../providers/app_provider.dart';
@@ -5,6 +14,8 @@ import '../theme/app_theme.dart';
 import '../widgets/stress_gauge.dart';
 import '../widgets/heart_rate_graph.dart';
 import '../widgets/data_source_badge.dart';
+import '../widgets/fall_alert_banner.dart'; // NEW
+import '../widgets/pressure_therapy_card.dart'; // NEW
 
 class HomeScreen extends StatelessWidget {
   const HomeScreen({super.key});
@@ -28,8 +39,13 @@ class HomeScreen extends StatelessWidget {
                   child: _buildAppBar(context, provider),
                 ),
 
-                // ── Demo Mode Banner (visible when override active) ────────
+                // ── Demo Mode Banner ──────────────────────────────────────
                 const SliverToBoxAdapter(child: DemoModeBanner()),
+
+                // ── Fall Alert Banner (NEW) ───────────────────────────────
+                const SliverToBoxAdapter(child: FallAlertBanner()),
+
+                // ── Stress Gauge Card ─────────────────────────────────────
                 SliverToBoxAdapter(
                   child: Padding(
                     padding: const EdgeInsets.fromLTRB(16, 8, 16, 0),
@@ -81,8 +97,7 @@ class HomeScreen extends StatelessWidget {
                             decoration: BoxDecoration(
                               color: color.withOpacity(0.15),
                               borderRadius: BorderRadius.circular(30),
-                              border:
-                                  Border.all(color: color.withOpacity(0.4)),
+                              border: Border.all(color: color.withOpacity(0.4)),
                             ),
                             child: Text(
                               label,
@@ -111,8 +126,8 @@ class HomeScreen extends StatelessWidget {
                 // ── Quick Metrics Row ─────────────────────────────────────
                 SliverToBoxAdapter(
                   child: Padding(
-                    padding:
-                        const EdgeInsets.symmetric(horizontal: 16, vertical: 12),
+                    padding: const EdgeInsets.symmetric(
+                        horizontal: 16, vertical: 12),
                     child: Row(
                       children: [
                         _quickMetric(
@@ -186,6 +201,8 @@ class HomeScreen extends StatelessWidget {
                             ],
                           ),
                           const SizedBox(height: 14),
+                          // Pressure Therapy Card (shown when stress > 75) — NEW
+                          if (stress > 75) const PressureTherapyCard(),
                           ...recs.map((rec) => _recTile(rec, color)),
                         ],
                       ),
@@ -256,7 +273,8 @@ class HomeScreen extends StatelessWidget {
               ),
               borderRadius: BorderRadius.circular(10),
             ),
-            child: const Icon(Icons.monitor_heart, color: Colors.white, size: 20),
+            child:
+                const Icon(Icons.monitor_heart, color: Colors.white, size: 20),
           ),
           const SizedBox(width: 10),
           Column(
@@ -281,14 +299,44 @@ class HomeScreen extends StatelessWidget {
             ],
           ),
           const Spacer(),
+          // Fall Detection Demo Button (NEW)
+          GestureDetector(
+            onTap: () async {
+              await provider.triggerFallManually();
+            },
+            child: Container(
+              margin: const EdgeInsets.only(right: 10),
+              padding: const EdgeInsets.symmetric(horizontal: 10, vertical: 6),
+              decoration: BoxDecoration(
+                color: AppTheme.accentRed.withOpacity(0.12),
+                borderRadius: BorderRadius.circular(8),
+                border: Border.all(color: AppTheme.accentRed.withOpacity(0.4)),
+              ),
+              child: const Row(
+                mainAxisSize: MainAxisSize.min,
+                children: [
+                  Icon(Icons.warning_amber_rounded,
+                      color: AppTheme.accentRed, size: 14),
+                  SizedBox(width: 4),
+                  Text(
+                    'Fall',
+                    style: TextStyle(
+                      color: AppTheme.accentRed,
+                      fontSize: 11,
+                      fontWeight: FontWeight.w600,
+                    ),
+                  ),
+                ],
+              ),
+            ),
+          ),
           DataSourceBadge(showIcon: true),
         ],
       ),
     );
   }
 
-  Widget _quickMetric(
-      String emoji, String value, String label, Color color) {
+  Widget _quickMetric(String emoji, String value, String label, Color color) {
     return Expanded(
       child: Container(
         decoration: AppTheme.glowDecoration(color),

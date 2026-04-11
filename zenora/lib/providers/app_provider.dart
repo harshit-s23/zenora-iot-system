@@ -1,12 +1,12 @@
 // ════════════════════════════════════════════════════════════════════════════
-// lib/providers/app_provider.dart
+// lib/providers/app_provider.dart  [EXTENDED — v3]
 //
-// CHANGES FROM V1:
-//   • Listens to FirebaseService.deviceStream for real-time cloud updates
-//   • _cloudOverrideEnabled flag tracks Firebase override state
-//   • When Firebase is offline → falls back to local simulation (unchanged UX)
-//   • Admin panel methods now call FirebaseService AND update local state
-//   • New getters: isCloudConnected, dataSourceLabel, isOverrideActive
+// NEW in v3:
+//   • isFallDetected flag + fall auto-trigger when stressIndex > 90
+//   • isPressureTherapyActive flag + HapticService integration
+//   • pressureTherapyCycle counter for animated pulse
+//   • userAge + userPhone stored in SharedPreferences
+//   • Fall event stored to Firebase via FallDetectionService
 // ════════════════════════════════════════════════════════════════════════════
 
 import 'dart:async';
@@ -14,6 +14,8 @@ import 'dart:math';
 import 'package:flutter/material.dart';
 import 'package:shared_preferences/shared_preferences.dart';
 import '../services/firebase_service.dart';
+import '../services/fall_detection_service.dart';
+import '../services/haptic_service.dart';
 
 class AppProvider extends ChangeNotifier {
   // ─── Real sensor values ────────────────────────────────────────────────────
@@ -42,9 +44,20 @@ class AppProvider extends ChangeNotifier {
   final List<double> _tempHistory = [];
   Timer? _simulationTimer;
 
+  // ─── Fall Detection ────────────────────────────────────────────────────────
+  bool _isFallDetected = false;
+  bool _fallAlertHandled = false; // prevents repeated triggers in same session
+  String _fallLocationLink = '';
+
+  // ─── Pressure Therapy ─────────────────────────────────────────────────────
+  bool _isPressureTherapyActive = false;
+  int _pressureTherapyCycle = 0;
+
   // ─── User profile ─────────────────────────────────────────────────────────
   String userName = 'Dr. Sarah Chen';
   String userRole = 'Healthcare Professional';
+  String userAge = '';
+  String userPhone = '';
   String memberSince = 'Jan 2026';
   bool deviceConnected = true;
   double batteryLevel = 0.78;
@@ -68,6 +81,14 @@ class AppProvider extends ChangeNotifier {
   bool get isCloudOverride => _cloudOverrideEnabled;
   bool get isCloudConnected => _isCloudConnected;
   bool get esp32Online => _esp32Online;
+
+  // Fall Detection
+  bool get isFallDetected => _isFallDetected;
+  String get fallLocationLink => _fallLocationLink;
+
+  // Pressure Therapy
+  bool get isPressureTherapyActive => _isPressureTherapyActive;
+  int get pressureTherapyCycle => _pressureTherapyCycle;
 
   String get dataSourceLabel {
     if (_cloudOverrideEnabled) return 'DEMO MODE';
@@ -121,12 +142,10 @@ class AppProvider extends ChangeNotifier {
   }
 
   void _startSimulation() {
-    _simulationTimer =
-        Timer.periodic(const Duration(milliseconds: 800), (_) {
+    _simulationTimer = Timer.periodic(const Duration(milliseconds: 800), (_) {
       final rand = Random();
       if (!isDemoMode) {
-        _heartRate =
-            (_heartRate + (rand.nextDouble() * 4 - 2)).clamp(55, 110);
+        _heartRate = (_heartRate + (rand.nextDouble() * 4 - 2)).clamp(55, 110);
         _gsr = (_gsr + (rand.nextDouble() * 0.4 - 0.2)).clamp(1.0, 10.0);
         _bodyTemp =
             (_bodyTemp + (rand.nextDouble() * 0.1 - 0.05)).clamp(35.5, 38.5);
@@ -139,12 +158,19 @@ class AppProvider extends ChangeNotifier {
         _stressIndex =
             (_demoStressIndex + (rand.nextDouble() * 2 - 1)).clamp(1, 100);
       }
+
       _hrHistory.add(_heartRate);
       _gsrHistory.add(_gsr);
       _tempHistory.add(_bodyTemp);
       if (_hrHistory.length > 120) _hrHistory.removeAt(0);
       if (_gsrHistory.length > 120) _gsrHistory.removeAt(0);
       if (_tempHistory.length > 120) _tempHistory.removeAt(0);
+
+      // Auto fall-detect when stress > 90
+      if (_stressIndex > 90 && !_fallAlertHandled) {
+        _triggerFallDetection();
+      }
+
       notifyListeners();
     });
   }
@@ -181,6 +207,90 @@ class AppProvider extends ChangeNotifier {
         notifyListeners();
       },
     );
+  }
+
+  // ═══════════════════════════════════════════════════════════════════════════
+  // FALL DETECTION
+  // ═══════════════════════════════════════════════════════════════════════════
+
+  Future<void> _triggerFallDetection() async {
+    _fallAlertHandled = true; // prevent re-trigger
+    _isFallDetected = true;
+    notifyListeners();
+
+    final locationLink =
+        await FallDetectionService.instance.getLocationLink() ??
+            'https://maps.google.com/?q=0,0';
+    _fallLocationLink = locationLink;
+
+    await FallDetectionService.instance.storeFallEvent(
+      userName: userName,
+      mapsLink: locationLink,
+    );
+
+    notifyListeners();
+  }
+
+  /// Manual trigger (demo button)
+  Future<void> triggerFallManually() async {
+    _fallAlertHandled = true;
+    _isFallDetected = true;
+    notifyListeners();
+
+    final locationLink =
+        await FallDetectionService.instance.getLocationLink() ??
+            'https://maps.google.com/?q=0,0';
+    _fallLocationLink = locationLink;
+
+    await FallDetectionService.instance.storeFallEvent(
+      userName: userName,
+      mapsLink: locationLink,
+    );
+
+    notifyListeners();
+  }
+
+  void dismissFallAlert() {
+    _isFallDetected = false;
+    // Keep _fallAlertHandled = true to avoid re-trigger in same session
+    notifyListeners();
+  }
+
+  void resetFallSession() {
+    _isFallDetected = false;
+    _fallAlertHandled = false;
+    _fallLocationLink = '';
+    notifyListeners();
+  }
+
+  // ═══════════════════════════════════════════════════════════════════════════
+  // PRESSURE THERAPY
+  // ═══════════════════════════════════════════════════════════════════════════
+
+  Future<void> startPressureTherapy() async {
+    if (_isPressureTherapyActive) return;
+    _isPressureTherapyActive = true;
+    _pressureTherapyCycle = 0;
+    notifyListeners();
+
+    await HapticService.instance.startPressureTherapy(
+      onCycleComplete: () {
+        _pressureTherapyCycle++;
+        notifyListeners();
+      },
+      onSessionEnd: () {
+        _isPressureTherapyActive = false;
+        _pressureTherapyCycle = 0;
+        notifyListeners();
+      },
+    );
+  }
+
+  void stopPressureTherapy() {
+    HapticService.instance.stop();
+    _isPressureTherapyActive = false;
+    _pressureTherapyCycle = 0;
+    notifyListeners();
   }
 
   // ═══════════════════════════════════════════════════════════════════════════
@@ -224,17 +334,40 @@ class AppProvider extends ChangeNotifier {
     double hr, gsr, temp, stress;
     switch (scenario) {
       case 'Calm':
-        stress = 25; hr = 65;  gsr = 2.8; temp = 36.4; break;
+        stress = 25;
+        hr = 65;
+        gsr = 2.8;
+        temp = 36.4;
+        break;
       case 'Relaxed':
-        stress = 42; hr = 72;  gsr = 4.0; temp = 36.6; break;
+        stress = 42;
+        hr = 72;
+        gsr = 4.0;
+        temp = 36.6;
+        break;
       case 'Moderate':
-        stress = 60; hr = 85;  gsr = 6.5; temp = 36.9; break;
+        stress = 60;
+        hr = 85;
+        gsr = 6.5;
+        temp = 36.9;
+        break;
       case 'High Stress':
-        stress = 78; hr = 98;  gsr = 8.5; temp = 37.2; break;
+        stress = 78;
+        hr = 98;
+        gsr = 8.5;
+        temp = 37.2;
+        break;
       case 'Very High':
-        stress = 92; hr = 115; gsr = 11.0; temp = 37.6; break;
+        stress = 92;
+        hr = 115;
+        gsr = 11.0;
+        temp = 37.6;
+        break;
       default:
-        stress = 34; hr = 72;  gsr = 4.2; temp = 36.6;
+        stress = 34;
+        hr = 72;
+        gsr = 4.2;
+        temp = 36.6;
     }
     _demoStressIndex = stress;
     _demoHeartRate = hr;
@@ -243,8 +376,11 @@ class AppProvider extends ChangeNotifier {
     _localOverrideEnabled = true;
     notifyListeners();
     await FirebaseService.instance.pushOverrideScenario(
-      heartRate: hr, gsr: gsr,
-      temperature: temp, stressIndex: stress, scenario: scenario,
+      heartRate: hr,
+      gsr: gsr,
+      temperature: temp,
+      stressIndex: stress,
+      scenario: scenario,
     );
   }
 
@@ -275,9 +411,18 @@ class AppProvider extends ChangeNotifier {
   // ─────────────────────────────────────────────────────────────────────────
   // PROFILE
   // ─────────────────────────────────────────────────────────────────────────
-  void updateProfile({String? name, String? role, String? ec1, String? ec2}) {
+  void updateProfile({
+    String? name,
+    String? role,
+    String? age,
+    String? phone,
+    String? ec1,
+    String? ec2,
+  }) {
     if (name != null) userName = name;
     if (role != null) userRole = role;
+    if (age != null) userAge = age;
+    if (phone != null) userPhone = phone;
     if (ec1 != null) emergencyContact1 = ec1;
     if (ec2 != null) emergencyContact2 = ec2;
     _savePrefs();
@@ -288,6 +433,8 @@ class AppProvider extends ChangeNotifier {
     final prefs = await SharedPreferences.getInstance();
     userName = prefs.getString('userName') ?? userName;
     userRole = prefs.getString('userRole') ?? userRole;
+    userAge = prefs.getString('userAge') ?? '';
+    userPhone = prefs.getString('userPhone') ?? '';
     emergencyContact1 = prefs.getString('ec1') ?? '';
     emergencyContact2 = prefs.getString('ec2') ?? '';
     notifyListeners();
@@ -297,6 +444,8 @@ class AppProvider extends ChangeNotifier {
     final prefs = await SharedPreferences.getInstance();
     await prefs.setString('userName', userName);
     await prefs.setString('userRole', userRole);
+    await prefs.setString('userAge', userAge);
+    await prefs.setString('userPhone', userPhone);
     await prefs.setString('ec1', emergencyContact1);
     await prefs.setString('ec2', emergencyContact2);
   }
@@ -305,6 +454,7 @@ class AppProvider extends ChangeNotifier {
   void dispose() {
     _simulationTimer?.cancel();
     _firebaseSub?.cancel();
+    HapticService.instance.dispose();
     super.dispose();
   }
 }

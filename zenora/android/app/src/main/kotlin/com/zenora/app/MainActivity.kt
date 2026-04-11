@@ -1,4 +1,4 @@
-package com.example.zenora
+package com.zenora.app
 
 import io.flutter.embedding.android.FlutterActivity
 

@@ -1,0 +1,32 @@
+# Flutter
+.dart_tool/
+.flutter-plugins
+.flutter-plugins-dependencies
+.packages
+.pub-cache/
+.pub/
+build/
+*.iml
+*.ipr
+*.iws
+.idea/
+
+# Firebase secrets — NEVER commit these
+google-services.json
+GoogleService-Info.plist
+lib/firebase_options.dart    # Contains API keys — use gitignore
+
+# Android
+android/.gradle
+android/captures/
+android/local.properties
+
+# iOS
+ios/.symlinks/
+ios/Flutter/Flutter.framework
+ios/Flutter/Flutter.podspec
+ios/Pods/
+ios/Runner.xcworkspace/xcshareddata/WorkspaceSettings.xcsettings
+
+# macOS
+macos/Flutter/GeneratedPluginRegistrant.swift

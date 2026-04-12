@@ -94,7 +94,6 @@ class AppProvider extends ChangeNotifier {
 
   String get dataSourceLabel {
     // Never expose demo/manipulation mode to the home UI.
-    // Always show live-data label so the home screen looks unchanged.
     if (_esp32Online) return 'LIVE DATA';
     if (_isCloudConnected) return 'LIVE DATA';
     return 'SIMULATED';
@@ -157,7 +156,7 @@ class AppProvider extends ChangeNotifier {
         _bodyTemp =
             (_bodyTemp + (rand.nextDouble() * 0.1 - 0.05)).clamp(35.5, 38.5);
         _stressIndex =
-            (_stressIndex + (rand.nextDouble() * 3 - 1.5)).clamp(10, 95);
+            (_stressIndex + (rand.nextDouble() * 3 - 1.5)).clamp(10, 85);
       } else {
         _heartRate = _demoHeartRate + (rand.nextDouble() * 4 - 2);
         _gsr = _demoGsr + (rand.nextDouble() * 0.2 - 0.1);
@@ -173,8 +172,10 @@ class AppProvider extends ChangeNotifier {
       if (_gsrHistory.length > 120) _gsrHistory.removeAt(0);
       if (_tempHistory.length > 120) _tempHistory.removeAt(0);
 
-      // Auto fall-detect when stress > 90
-      if (_stressIndex > 90 && !_fallAlertHandled) {
+      // Only trigger emergency popup when admin manipulation is active (isDemoMode)
+      // AND stress is above 90. This prevents random simulation drift from
+      // firing false alerts during normal use.
+      if (isDemoMode && _stressIndex > 90 && !_fallAlertHandled) {
         _triggerFallDetection();
       }
 
@@ -240,7 +241,7 @@ class AppProvider extends ChangeNotifier {
     notifyListeners();
   }
 
-  /// Manual trigger (demo button)
+  /// Manual trigger (Fall test button on home screen)
   Future<void> triggerFallManually() async {
     _fallAlertHandled = true;
     _isFallDetected = true;

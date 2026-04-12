@@ -21,9 +21,10 @@ class PressureTherapyService {
 
   // ── Hardware config ────────────────────────────────────────────────────────
   // Set this to your ESP32's IP address on the same WiFi network
-  static String esp32Ip = '192.168.1.100';
+  static String esp32Ip =
+      '10.59.180.90'; // ✅ UPDATE to your ESP32 IP from Serial Monitor
   static String get _baseUrl => 'http://$esp32Ip';
-  static bool hardwareConnected = false;
+  static bool hardwareConnected = true; // ✅ set true to send commands to ESP32
 
   // ── State ──────────────────────────────────────────────────────────────────
   bool _isRunning = false;

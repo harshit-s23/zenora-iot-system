@@ -23,6 +23,8 @@ class AppProvider extends ChangeNotifier {
   double _gsr = 4.2;
   double _bodyTemp = 36.6;
   double _stressIndex = 34;
+  double _spo2 = 98.0; // ✅ SpO2 from ESP32
+  bool _fallFromEsp32 = false; // ✅ Fall detection from ESP32
 
   // ─── Local demo override (fallback when Firebase offline) ─────────────────
   bool _localOverrideEnabled = false;
@@ -106,6 +108,8 @@ class AppProvider extends ChangeNotifier {
   double get gsr => _gsr;
   double get bodyTemp => _bodyTemp;
   double get stressIndex => _stressIndex;
+  double get spo2 => _spo2;
+  bool get fallFromEsp32 => _fallFromEsp32;
 
   double get demoHeartRate => _demoHeartRate;
   double get demoGsr => _demoGsr;
@@ -197,6 +201,8 @@ class AppProvider extends ChangeNotifier {
           _gsr = snapshot.gsr;
           _bodyTemp = snapshot.temperature;
           _stressIndex = snapshot.stressIndex;
+          _spo2 = snapshot.spo2; // ✅ read SpO2
+          _fallFromEsp32 = snapshot.fall; // ✅ read fall
           _localOverrideEnabled = false;
         }
         notifyListeners();

@@ -18,6 +18,16 @@ class DeviceSnapshot {
   final bool esp32Online;
   final String scenario;
 
+  // ── MPU6050 fall detection fields ─────────────────────────────────────────
+  final double roll; // degrees  (linear orientation)
+  final double pitch; // degrees  (linear orientation)
+  final double linearX; // m/s²     (linear acceleration)
+  final double linearY; // m/s²
+  final double linearZ; // m/s²
+  final double rotationalX; // °/s      (gyroscope)
+  final double rotationalY; // °/s
+  final double rotationalZ; // °/s
+
   const DeviceSnapshot({
     required this.heartRate,
     required this.spo2,
@@ -28,6 +38,15 @@ class DeviceSnapshot {
     required this.overrideEnabled,
     required this.esp32Online,
     this.scenario = 'Calm',
+    // MPU6050 defaults → upright, stationary
+    this.roll = 0.0,
+    this.pitch = 0.0,
+    this.linearX = 0.0,
+    this.linearY = 0.0,
+    this.linearZ = 9.81,
+    this.rotationalX = 0.0,
+    this.rotationalY = 0.0,
+    this.rotationalZ = 0.0,
   });
 
   /// Fallback when Firebase is unreachable
@@ -85,7 +104,6 @@ class FirebaseService {
 
     _seedDefaults();
 
-    // Listen to real_data node
     _realDataSub = _realDataRef.onValue.listen((event) {
       if (event.snapshot.exists && event.snapshot.value != null) {
         _latestReal = Map<String, dynamic>.from(event.snapshot.value as Map);
@@ -95,7 +113,6 @@ class FirebaseService {
       debugPrint('[Firebase] real_data listen error: $e');
     });
 
-    // Listen to override node
     _overrideSub = _overrideRef.onValue.listen((event) {
       if (event.snapshot.exists && event.snapshot.value != null) {
         _latestOverride =
@@ -118,9 +135,10 @@ class FirebaseService {
       double heartRate, spo2, gsr, temperature, stressIndex;
       bool fall;
       String scenario;
+      double roll, pitch, linearX, linearY, linearZ;
+      double rotationalX, rotationalY, rotationalZ;
 
       if (overrideEnabled) {
-        // Use admin-set override values
         heartRate = _toDouble(_latestOverride['heart_rate'], 72.0);
         spo2 = _toDouble(_latestOverride['spo2'], 98.0);
         gsr = _toDouble(_latestOverride['gsr'], 4.2);
@@ -128,8 +146,16 @@ class FirebaseService {
         stressIndex = _toDouble(_latestOverride['stress_index'], 34.0);
         fall = (_latestOverride['fall'] as bool?) ?? false;
         scenario = (_latestOverride['scenario'] as String?) ?? 'Calm';
+        // MPU override values
+        roll = _toDouble(_latestOverride['mpu_roll'], 0.0);
+        pitch = _toDouble(_latestOverride['mpu_pitch'], 0.0);
+        linearX = _toDouble(_latestOverride['mpu_linear_x'], 0.0);
+        linearY = _toDouble(_latestOverride['mpu_linear_y'], 0.0);
+        linearZ = _toDouble(_latestOverride['mpu_linear_z'], 9.81);
+        rotationalX = _toDouble(_latestOverride['mpu_rot_x'], 0.0);
+        rotationalY = _toDouble(_latestOverride['mpu_rot_y'], 0.0);
+        rotationalZ = _toDouble(_latestOverride['mpu_rot_z'], 0.0);
       } else {
-        // Use real ESP32 sensor values
         heartRate = _toDouble(_latestReal['heart_rate'], 72.0);
         spo2 = _toDouble(_latestReal['spo2'], 98.0);
         gsr = _toDouble(_latestReal['gsr'], 4.2);
@@ -137,9 +163,17 @@ class FirebaseService {
         stressIndex = _toDouble(_latestReal['stress_index'], 34.0);
         fall = (_latestReal['fall'] as bool?) ?? false;
         scenario = 'Live';
+        // MPU real values (from ESP32 if present, otherwise defaults)
+        roll = _toDouble(_latestReal['mpu_roll'], 0.0);
+        pitch = _toDouble(_latestReal['mpu_pitch'], 0.0);
+        linearX = _toDouble(_latestReal['mpu_linear_x'], 0.0);
+        linearY = _toDouble(_latestReal['mpu_linear_y'], 0.0);
+        linearZ = _toDouble(_latestReal['mpu_linear_z'], 9.81);
+        rotationalX = _toDouble(_latestReal['mpu_rot_x'], 0.0);
+        rotationalY = _toDouble(_latestReal['mpu_rot_y'], 0.0);
+        rotationalZ = _toDouble(_latestReal['mpu_rot_z'], 0.0);
       }
 
-      // ✅ All 9 required fields passed — no missing parameters
       _snapshotController.add(DeviceSnapshot(
         heartRate: heartRate,
         spo2: spo2,
@@ -150,6 +184,14 @@ class FirebaseService {
         overrideEnabled: overrideEnabled,
         esp32Online: esp32Online,
         scenario: scenario,
+        roll: roll,
+        pitch: pitch,
+        linearX: linearX,
+        linearY: linearY,
+        linearZ: linearZ,
+        rotationalX: rotationalX,
+        rotationalY: rotationalY,
+        rotationalZ: rotationalZ,
       ));
     } catch (e) {
       debugPrint('[Firebase] emit error: $e');
@@ -204,6 +246,35 @@ class FirebaseService {
     }
   }
 
+  /// Push all 8 MPU6050 override values at once.
+  Future<void> updateMpuOverride({
+    required double roll,
+    required double pitch,
+    required double linearX,
+    required double linearY,
+    required double linearZ,
+    required double rotationalX,
+    required double rotationalY,
+    required double rotationalZ,
+  }) async {
+    try {
+      await _overrideRef.update({
+        'enabled': true,
+        'mpu_roll': roll,
+        'mpu_pitch': pitch,
+        'mpu_linear_x': linearX,
+        'mpu_linear_y': linearY,
+        'mpu_linear_z': linearZ,
+        'mpu_rot_x': rotationalX,
+        'mpu_rot_y': rotationalY,
+        'mpu_rot_z': rotationalZ,
+        'updated_at': ServerValue.timestamp,
+      });
+    } catch (e) {
+      debugPrint('[Firebase] updateMpuOverride error: $e');
+    }
+  }
+
   // ─────────────────────────────────────────────────────────────────────────
   // ESP32 — Write real sensor data
   // ─────────────────────────────────────────────────────────────────────────
@@ -214,6 +285,15 @@ class FirebaseService {
     required double stressIndex,
     double spo2 = 98.0,
     bool fall = false,
+    // MPU6050 fields (optional — only present if ESP32 sends them)
+    double roll = 0.0,
+    double pitch = 0.0,
+    double linearX = 0.0,
+    double linearY = 0.0,
+    double linearZ = 9.81,
+    double rotationalX = 0.0,
+    double rotationalY = 0.0,
+    double rotationalZ = 0.0,
   }) async {
     try {
       await _realDataRef.update({
@@ -224,6 +304,14 @@ class FirebaseService {
         'stress_index': stressIndex,
         'fall': fall,
         'esp32_online': true,
+        'mpu_roll': roll,
+        'mpu_pitch': pitch,
+        'mpu_linear_x': linearX,
+        'mpu_linear_y': linearY,
+        'mpu_linear_z': linearZ,
+        'mpu_rot_x': rotationalX,
+        'mpu_rot_y': rotationalY,
+        'mpu_rot_z': rotationalZ,
         'updated_at': ServerValue.timestamp,
       });
     } catch (e) {
@@ -255,6 +343,14 @@ class FirebaseService {
           'stress_index': 34.0,
           'fall': false,
           'esp32_online': false,
+          'mpu_roll': 0.0,
+          'mpu_pitch': 0.0,
+          'mpu_linear_x': 0.0,
+          'mpu_linear_y': 0.0,
+          'mpu_linear_z': 9.81,
+          'mpu_rot_x': 0.0,
+          'mpu_rot_y': 0.0,
+          'mpu_rot_z': 0.0,
           'updated_at': ServerValue.timestamp,
         });
       }
@@ -270,6 +366,14 @@ class FirebaseService {
           'stress_index': 34.0,
           'fall': false,
           'scenario': 'Calm',
+          'mpu_roll': 0.0,
+          'mpu_pitch': 0.0,
+          'mpu_linear_x': 0.0,
+          'mpu_linear_y': 0.0,
+          'mpu_linear_z': 9.81,
+          'mpu_rot_x': 0.0,
+          'mpu_rot_y': 0.0,
+          'mpu_rot_z': 0.0,
         });
       }
     } catch (e) {

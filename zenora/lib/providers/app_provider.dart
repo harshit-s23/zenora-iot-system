@@ -26,6 +26,26 @@ class AppProvider extends ChangeNotifier {
   double _spo2 = 98.0; // ✅ SpO2 from ESP32
   bool _fallFromEsp32 = false; // ✅ Fall detection from ESP32
 
+  // ─── MPU6050 fall detection values ────────────────────────────────────────
+  double _mpuRoll = 0.0; // degrees
+  double _mpuPitch = 0.0; // degrees
+  double _mpuLinearX = 0.0; // m/s²
+  double _mpuLinearY = 0.0; // m/s²
+  double _mpuLinearZ = 9.81; // m/s²
+  double _mpuRotationalX = 0.0; // °/s
+  double _mpuRotationalY = 0.0; // °/s
+  double _mpuRotationalZ = 0.0; // °/s
+
+  // MPU6050 admin override values (shown in admin sliders)
+  double _demoMpuRoll = 0.0;
+  double _demoMpuPitch = 0.0;
+  double _demoMpuLinearX = 0.0;
+  double _demoMpuLinearY = 0.0;
+  double _demoMpuLinearZ = 9.81;
+  double _demoMpuRotX = 0.0;
+  double _demoMpuRotY = 0.0;
+  double _demoMpuRotZ = 0.0;
+
   // ─── Local demo override (fallback when Firebase offline) ─────────────────
   bool _localOverrideEnabled = false;
   double _demoHeartRate = 72;
@@ -112,6 +132,26 @@ class AppProvider extends ChangeNotifier {
   double get stressIndex => _stressIndex;
   double get spo2 => _spo2;
   bool get fallFromEsp32 => _fallFromEsp32;
+
+  // ── MPU6050 live values (shown to user) ───────────────────────────────────
+  double get mpuRoll => _mpuRoll;
+  double get mpuPitch => _mpuPitch;
+  double get mpuLinearX => _mpuLinearX;
+  double get mpuLinearY => _mpuLinearY;
+  double get mpuLinearZ => _mpuLinearZ;
+  double get mpuRotationalX => _mpuRotationalX;
+  double get mpuRotationalY => _mpuRotationalY;
+  double get mpuRotationalZ => _mpuRotationalZ;
+
+  // ── MPU6050 admin override values (used by admin sliders) ─────────────────
+  double get demoMpuRoll => _demoMpuRoll;
+  double get demoMpuPitch => _demoMpuPitch;
+  double get demoMpuLinearX => _demoMpuLinearX;
+  double get demoMpuLinearY => _demoMpuLinearY;
+  double get demoMpuLinearZ => _demoMpuLinearZ;
+  double get demoMpuRotX => _demoMpuRotX;
+  double get demoMpuRotY => _demoMpuRotY;
+  double get demoMpuRotZ => _demoMpuRotZ;
 
   double get demoHeartRate => _demoHeartRate;
   double get demoGsr => _demoGsr;
@@ -200,6 +240,23 @@ class AppProvider extends ChangeNotifier {
           _gsr = snapshot.gsr;
           _bodyTemp = snapshot.temperature;
           _stressIndex = snapshot.stressIndex;
+          // MPU6050 override → update both demo (slider) and live (display) values
+          _demoMpuRoll = snapshot.roll;
+          _demoMpuPitch = snapshot.pitch;
+          _demoMpuLinearX = snapshot.linearX;
+          _demoMpuLinearY = snapshot.linearY;
+          _demoMpuLinearZ = snapshot.linearZ;
+          _demoMpuRotX = snapshot.rotationalX;
+          _demoMpuRotY = snapshot.rotationalY;
+          _demoMpuRotZ = snapshot.rotationalZ;
+          _mpuRoll = snapshot.roll;
+          _mpuPitch = snapshot.pitch;
+          _mpuLinearX = snapshot.linearX;
+          _mpuLinearY = snapshot.linearY;
+          _mpuLinearZ = snapshot.linearZ;
+          _mpuRotationalX = snapshot.rotationalX;
+          _mpuRotationalY = snapshot.rotationalY;
+          _mpuRotationalZ = snapshot.rotationalZ;
         } else if (snapshot.esp32Online) {
           _heartRate = snapshot.heartRate;
           _gsr = snapshot.gsr;
@@ -208,6 +265,15 @@ class AppProvider extends ChangeNotifier {
           _spo2 = snapshot.spo2; // ✅ read SpO2
           _fallFromEsp32 = snapshot.fall; // ✅ read fall
           _localOverrideEnabled = false;
+          // MPU6050 real values from ESP32
+          _mpuRoll = snapshot.roll;
+          _mpuPitch = snapshot.pitch;
+          _mpuLinearX = snapshot.linearX;
+          _mpuLinearY = snapshot.linearY;
+          _mpuLinearZ = snapshot.linearZ;
+          _mpuRotationalX = snapshot.rotationalX;
+          _mpuRotationalY = snapshot.rotationalY;
+          _mpuRotationalZ = snapshot.rotationalZ;
         }
         notifyListeners();
       },
@@ -418,6 +484,39 @@ class AppProvider extends ChangeNotifier {
     await FirebaseService.instance.updateOverrideField('stress_index', v);
     // Fire haptic motor (D19) on ESP32 to reflect the manipulated stress value
     PressureTherapyService.instance.sendHapticForStress(v);
+  }
+
+  // ── MPU6050 admin override ─────────────────────────────────────────────────
+  /// Called by admin sliders — pushes all 8 MPU fields to Firebase in one write.
+  Future<void> setDemoMpuValues({
+    double? roll,
+    double? pitch,
+    double? linearX,
+    double? linearY,
+    double? linearZ,
+    double? rotX,
+    double? rotY,
+    double? rotZ,
+  }) async {
+    if (roll != null) _demoMpuRoll = roll;
+    if (pitch != null) _demoMpuPitch = pitch;
+    if (linearX != null) _demoMpuLinearX = linearX;
+    if (linearY != null) _demoMpuLinearY = linearY;
+    if (linearZ != null) _demoMpuLinearZ = linearZ;
+    if (rotX != null) _demoMpuRotX = rotX;
+    if (rotY != null) _demoMpuRotY = rotY;
+    if (rotZ != null) _demoMpuRotZ = rotZ;
+    notifyListeners();
+    await FirebaseService.instance.updateMpuOverride(
+      roll: _demoMpuRoll,
+      pitch: _demoMpuPitch,
+      linearX: _demoMpuLinearX,
+      linearY: _demoMpuLinearY,
+      linearZ: _demoMpuLinearZ,
+      rotationalX: _demoMpuRotX,
+      rotationalY: _demoMpuRotY,
+      rotationalZ: _demoMpuRotZ,
+    );
   }
 
   // ─────────────────────────────────────────────────────────────────────────

@@ -1,4 +1,4 @@
-// lib/screens/home_screen.dart  [v5]
+// lib/screens/home_screen.dart  [v4]
 import 'package:flutter/material.dart';
 import 'package:provider/provider.dart';
 import '../providers/app_provider.dart';
@@ -33,23 +33,22 @@ class _HomeScreenState extends State<HomeScreen> {
 
   void _onProviderChange() {
     if (_provider == null || !mounted) return;
-    final isCurrentRoute = ModalRoute.of(context)?.isCurrent ?? false;
-    if (_provider!.isFallDetected && !_dialogActive && isCurrentRoute) {
-      _showFallDialog();
-    }
-  }
 
-  void _showFallDialog() {
-    _dialogActive = true;
-    WidgetsBinding.instance.addPostFrameCallback((_) {
-      if (!mounted) return;
-      showDialog<void>(
-        context: context,
-        barrierDismissible: false,
-        barrierColor: Colors.black.withOpacity(0.75),
-        builder: (_) => const EmergencyCountdownDialog(),
-      ).then((_) => _dialogActive = false);
-    });
+    // Only show dialog when Home is the active screen (not while admin is open)
+    final isCurrentRoute = ModalRoute.of(context)?.isCurrent ?? false;
+
+    if (_provider!.isFallDetected && !_dialogActive && isCurrentRoute) {
+      _dialogActive = true;
+      WidgetsBinding.instance.addPostFrameCallback((_) {
+        if (!mounted) return;
+        showDialog<void>(
+          context: context,
+          barrierDismissible: false,
+          barrierColor: Colors.black.withOpacity(0.75),
+          builder: (_) => const EmergencyCountdownDialog(),
+        ).then((_) => _dialogActive = false);
+      });
+    }
   }
 
   @override
@@ -60,20 +59,6 @@ class _HomeScreenState extends State<HomeScreen> {
 
   @override
   Widget build(BuildContext context) {
-    // Register this widget as a dependent of the current route.
-    // When admin pops and home becomes isCurrent again, Flutter rebuilds here,
-    // and we immediately check whether the fall popup is still pending.
-    final isCurrentRoute = ModalRoute.of(context)?.isCurrent ?? false;
-    if (isCurrentRoute && _provider?.isFallDetected == true && !_dialogActive) {
-      WidgetsBinding.instance.addPostFrameCallback((_) {
-        if (mounted &&
-            !_dialogActive &&
-            (ModalRoute.of(context)?.isCurrent ?? false)) {
-          _showFallDialog();
-        }
-      });
-    }
-
     return Consumer<AppProvider>(
       builder: (context, provider, _) {
         final stress = provider.stressIndex;
@@ -254,11 +239,201 @@ class _HomeScreenState extends State<HomeScreen> {
                     ),
                   ),
                 ),
+
+                // ── Fall Detection Card (user-facing, read-only) ──────────
+                SliverToBoxAdapter(
+                  child: Padding(
+                    padding: const EdgeInsets.fromLTRB(16, 0, 16, 24),
+                    child: _fallDetectionCard(provider),
+                  ),
+                ),
               ],
             ),
           ),
         );
       },
+    );
+  }
+
+  // ── Fall Detection Card (read-only user view) ─────────────────────────────
+  Widget _fallDetectionCard(AppProvider provider) {
+    final isFall = provider.isFallDetected;
+    final statusColor = isFall ? AppTheme.accentRed : AppTheme.accentGreen;
+    final statusLabel = isFall ? 'FALL DETECTED' : 'STABLE';
+    final statusIcon =
+        isFall ? Icons.warning_rounded : Icons.check_circle_outline;
+
+    return Container(
+      decoration: BoxDecoration(
+        color: AppTheme.cardBg,
+        borderRadius: BorderRadius.circular(16),
+        border: Border.all(
+          color: statusColor.withOpacity(isFall ? 0.7 : 0.25),
+          width: isFall ? 1.5 : 1,
+        ),
+        boxShadow: [
+          BoxShadow(
+            color: statusColor.withOpacity(isFall ? 0.18 : 0.06),
+            blurRadius: isFall ? 14 : 6,
+          ),
+        ],
+      ),
+      padding: const EdgeInsets.all(16),
+      child: Column(
+        crossAxisAlignment: CrossAxisAlignment.start,
+        children: [
+          // ── Header row ──────────────────────────────────────────────────
+          Row(children: [
+            Container(
+              padding: const EdgeInsets.all(7),
+              decoration: BoxDecoration(
+                color: statusColor.withOpacity(0.15),
+                borderRadius: BorderRadius.circular(10),
+              ),
+              child:
+                  Icon(Icons.accessibility_new, color: statusColor, size: 18),
+            ),
+            const SizedBox(width: 10),
+            const Text('Fall Detection',
+                style: TextStyle(
+                    color: AppTheme.textPrimary,
+                    fontSize: 15,
+                    fontWeight: FontWeight.w600)),
+            const Spacer(),
+            // Status badge
+            AnimatedContainer(
+              duration: const Duration(milliseconds: 300),
+              padding: const EdgeInsets.symmetric(horizontal: 10, vertical: 5),
+              decoration: BoxDecoration(
+                color: statusColor.withOpacity(0.15),
+                borderRadius: BorderRadius.circular(20),
+                border: Border.all(color: statusColor.withOpacity(0.4)),
+              ),
+              child: Row(mainAxisSize: MainAxisSize.min, children: [
+                Icon(statusIcon, color: statusColor, size: 12),
+                const SizedBox(width: 5),
+                Text(statusLabel,
+                    style: TextStyle(
+                        color: statusColor,
+                        fontSize: 11,
+                        fontWeight: FontWeight.w700,
+                        letterSpacing: 0.5)),
+              ]),
+            ),
+          ]),
+
+          const SizedBox(height: 16),
+
+          // ── Orientation row ─────────────────────────────────────────────
+          _mpuSectionLabel(Icons.screen_rotation_alt, const Color(0xFF7B61FF),
+              'Orientation'),
+          const SizedBox(height: 8),
+          Row(children: [
+            _mpuValueTile('Roll', '${provider.mpuRoll.toStringAsFixed(1)}°',
+                const Color(0xFF7B61FF)),
+            const SizedBox(width: 10),
+            _mpuValueTile('Pitch', '${provider.mpuPitch.toStringAsFixed(1)}°',
+                const Color(0xFF7B61FF)),
+          ]),
+
+          const SizedBox(height: 14),
+
+          // ── Linear acceleration row ─────────────────────────────────────
+          _mpuSectionLabel(
+              Icons.speed, AppTheme.accentCyan, 'Linear Acceleration (m/s²)'),
+          const SizedBox(height: 8),
+          Row(children: [
+            _mpuValueTile('X', provider.mpuLinearX.toStringAsFixed(2),
+                AppTheme.accentCyan),
+            const SizedBox(width: 8),
+            _mpuValueTile('Y', provider.mpuLinearY.toStringAsFixed(2),
+                AppTheme.accentCyan),
+            const SizedBox(width: 8),
+            _mpuValueTile('Z', provider.mpuLinearZ.toStringAsFixed(2),
+                AppTheme.accentCyan),
+          ]),
+
+          const SizedBox(height: 14),
+
+          // ── Rotational row ──────────────────────────────────────────────
+          _mpuSectionLabel(Icons.rotate_90_degrees_ccw, AppTheme.accentOrange,
+              'Rotational / Gyroscope (°/s)'),
+          const SizedBox(height: 8),
+          Row(children: [
+            _mpuValueTile('X', provider.mpuRotationalX.toStringAsFixed(1),
+                AppTheme.accentOrange),
+            const SizedBox(width: 8),
+            _mpuValueTile('Y', provider.mpuRotationalY.toStringAsFixed(1),
+                AppTheme.accentOrange),
+            const SizedBox(width: 8),
+            _mpuValueTile('Z', provider.mpuRotationalZ.toStringAsFixed(1),
+                AppTheme.accentOrange),
+          ]),
+
+          // ── Fall alert callout (only visible when detected) ─────────────
+          if (isFall) ...[
+            const SizedBox(height: 14),
+            Container(
+              padding: const EdgeInsets.all(12),
+              decoration: BoxDecoration(
+                color: AppTheme.accentRed.withOpacity(0.1),
+                borderRadius: BorderRadius.circular(10),
+                border: Border.all(color: AppTheme.accentRed.withOpacity(0.35)),
+              ),
+              child: Row(children: [
+                const Icon(Icons.warning_amber_rounded,
+                    color: AppTheme.accentRed, size: 16),
+                const SizedBox(width: 8),
+                const Expanded(
+                  child: Text(
+                    'Abnormal motion detected — emergency alert triggered.',
+                    style: TextStyle(
+                        color: AppTheme.accentRed, fontSize: 12, height: 1.4),
+                  ),
+                ),
+              ]),
+            ),
+          ],
+        ],
+      ),
+    );
+  }
+
+  Widget _mpuSectionLabel(IconData icon, Color color, String label) {
+    return Row(children: [
+      Icon(icon, color: color, size: 13),
+      const SizedBox(width: 5),
+      Text(label,
+          style: TextStyle(
+              color: color,
+              fontSize: 11,
+              fontWeight: FontWeight.w600,
+              letterSpacing: 0.3)),
+    ]);
+  }
+
+  Widget _mpuValueTile(String axis, String value, Color color) {
+    return Expanded(
+      child: Container(
+        padding: const EdgeInsets.symmetric(vertical: 10, horizontal: 8),
+        decoration: BoxDecoration(
+          color: color.withOpacity(0.08),
+          borderRadius: BorderRadius.circular(10),
+          border: Border.all(color: color.withOpacity(0.2)),
+        ),
+        child: Column(children: [
+          Text(axis,
+              style: TextStyle(
+                  color: color.withOpacity(0.7),
+                  fontSize: 10,
+                  fontWeight: FontWeight.w600,
+                  letterSpacing: 0.5)),
+          const SizedBox(height: 3),
+          Text(value,
+              style: TextStyle(
+                  color: color, fontSize: 14, fontWeight: FontWeight.bold)),
+        ]),
+      ),
     );
   }
 
@@ -290,6 +465,29 @@ class _HomeScreenState extends State<HomeScreen> {
                   letterSpacing: 1.5)),
         ]),
         const Spacer(),
+        // Internal test button — tap to test the emergency dialog
+        GestureDetector(
+          onTap: () async => provider.triggerFallManually(),
+          child: Container(
+            margin: const EdgeInsets.only(right: 10),
+            padding: const EdgeInsets.symmetric(horizontal: 10, vertical: 6),
+            decoration: BoxDecoration(
+              color: AppTheme.accentRed.withOpacity(0.12),
+              borderRadius: BorderRadius.circular(8),
+              border: Border.all(color: AppTheme.accentRed.withOpacity(0.4)),
+            ),
+            child: const Row(mainAxisSize: MainAxisSize.min, children: [
+              Icon(Icons.warning_amber_rounded,
+                  color: AppTheme.accentRed, size: 14),
+              SizedBox(width: 4),
+              Text('Fall',
+                  style: TextStyle(
+                      color: AppTheme.accentRed,
+                      fontSize: 11,
+                      fontWeight: FontWeight.w600)),
+            ]),
+          ),
+        ),
         DataSourceBadge(showIcon: true),
       ]),
     );

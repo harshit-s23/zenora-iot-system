@@ -24,7 +24,7 @@ class AdminScreen extends StatefulWidget {
 }
 
 class _AdminScreenState extends State<AdminScreen> {
-  bool _isPushing = false;   // Shows a brief "syncing" state on Firebase writes
+  bool _isPushing = false; // Shows a brief "syncing" state on Firebase writes
 
   Future<void> _withPushFeedback(Future<void> Function() action) async {
     setState(() => _isPushing = true);
@@ -54,7 +54,8 @@ class _AdminScreenState extends State<AdminScreen> {
                   child: Row(
                     children: const [
                       SizedBox(
-                        width: 12, height: 12,
+                        width: 12,
+                        height: 12,
                         child: CircularProgressIndicator(
                           strokeWidth: 2,
                           color: AppTheme.accentCyan,
@@ -78,7 +79,6 @@ class _AdminScreenState extends State<AdminScreen> {
           body: ListView(
             padding: const EdgeInsets.all(16),
             children: [
-
               // ── Warning banner ─────────────────────────────────────────
               _warningBanner(),
               const SizedBox(height: 14),
@@ -103,6 +103,15 @@ class _AdminScreenState extends State<AdminScreen> {
               _sectionHint('Changes push to Firebase instantly'),
               const SizedBox(height: 10),
               _slidersCard(provider),
+              const SizedBox(height: 18),
+
+              // ── MPU6050 Fall Detection Override ────────────────────────
+              _sectionLabel('MPU6050 Fall Detection Override'),
+              const SizedBox(height: 2),
+              _sectionHint(
+                  'Simulate roll/pitch orientation and linear/rotational values (°, m/s², °/s)'),
+              const SizedBox(height: 10),
+              _mpuSlidersCard(provider),
               const SizedBox(height: 16),
 
               // ── Live Preview ───────────────────────────────────────────
@@ -124,8 +133,8 @@ class _AdminScreenState extends State<AdminScreen> {
                   ),
                   icon: const Icon(Icons.restore),
                   label: const Text('Disable Override — Show Real Data'),
-                  onPressed: () => _withPushFeedback(
-                      () => provider.setDemoMode(false)),
+                  onPressed: () =>
+                      _withPushFeedback(() => provider.setDemoMode(false)),
                 ),
               ),
               const SizedBox(height: 24),
@@ -164,10 +173,9 @@ class _AdminScreenState extends State<AdminScreen> {
   // ── Cloud sync status card ──────────────────────────────────────────────
   Widget _cloudStatusCard(AppProvider provider) {
     return Container(
-      decoration: AppTheme.glowDecoration(
-          provider.isCloudConnected
-              ? AppTheme.accentCyan
-              : AppTheme.borderColor),
+      decoration: AppTheme.glowDecoration(provider.isCloudConnected
+          ? AppTheme.accentCyan
+          : AppTheme.borderColor),
       padding: const EdgeInsets.all(14),
       child: Column(
         crossAxisAlignment: CrossAxisAlignment.start,
@@ -256,14 +264,14 @@ class _AdminScreenState extends State<AdminScreen> {
   // ── Demo mode master toggle ─────────────────────────────────────────────
   Widget _demoModeToggle(AppProvider provider) {
     return Container(
-      decoration: AppTheme.glowDecoration(provider.isDemoMode
-          ? AppTheme.accentOrange
-          : AppTheme.borderColor),
+      decoration: AppTheme.glowDecoration(
+          provider.isDemoMode ? AppTheme.accentOrange : AppTheme.borderColor),
       padding: const EdgeInsets.all(16),
       child: Row(
         children: [
           Container(
-            width: 42, height: 42,
+            width: 42,
+            height: 42,
             decoration: BoxDecoration(
               color: AppTheme.accentOrange.withOpacity(0.15),
               borderRadius: BorderRadius.circular(12),
@@ -293,7 +301,8 @@ class _AdminScreenState extends State<AdminScreen> {
                     padding: const EdgeInsets.only(top: 4),
                     child: Row(
                       children: [
-                        const Icon(Icons.sync, color: AppTheme.accentCyan, size: 11),
+                        const Icon(Icons.sync,
+                            color: AppTheme.accentCyan, size: 11),
                         const SizedBox(width: 4),
                         const Text('Pushed to Firebase',
                             style: TextStyle(
@@ -306,8 +315,7 @@ class _AdminScreenState extends State<AdminScreen> {
           ),
           Switch(
             value: provider.isDemoMode,
-            onChanged: (v) =>
-                _withPushFeedback(() => provider.setDemoMode(v)),
+            onChanged: (v) => _withPushFeedback(() => provider.setDemoMode(v)),
             activeColor: AppTheme.accentOrange,
             trackColor: WidgetStateProperty.resolveWith((states) =>
                 states.contains(WidgetState.selected)
@@ -335,16 +343,13 @@ class _AdminScreenState extends State<AdminScreen> {
       children: scenarios.map((s) {
         final isActive = provider.isDemoMode && provider.demoScenario == s.$1;
         return GestureDetector(
-          onTap: () => _withPushFeedback(
-              () => provider.applyDemoScenario(s.$1)),
+          onTap: () =>
+              _withPushFeedback(() => provider.applyDemoScenario(s.$1)),
           child: AnimatedContainer(
             duration: const Duration(milliseconds: 200),
-            padding:
-                const EdgeInsets.symmetric(horizontal: 14, vertical: 10),
+            padding: const EdgeInsets.symmetric(horizontal: 14, vertical: 10),
             decoration: BoxDecoration(
-              color: isActive
-                  ? s.$2.withOpacity(0.2)
-                  : AppTheme.cardBg,
+              color: isActive ? s.$2.withOpacity(0.2) : AppTheme.cardBg,
               borderRadius: BorderRadius.circular(12),
               border: Border.all(
                 color: isActive ? s.$2 : AppTheme.borderColor,
@@ -365,11 +370,9 @@ class _AdminScreenState extends State<AdminScreen> {
                     Text(
                       s.$1,
                       style: TextStyle(
-                        color:
-                            isActive ? s.$2 : AppTheme.textPrimary,
-                        fontWeight: isActive
-                            ? FontWeight.bold
-                            : FontWeight.normal,
+                        color: isActive ? s.$2 : AppTheme.textPrimary,
+                        fontWeight:
+                            isActive ? FontWeight.bold : FontWeight.normal,
                         fontSize: 13,
                       ),
                     ),
@@ -381,8 +384,7 @@ class _AdminScreenState extends State<AdminScreen> {
                           SizedBox(width: 3),
                           Text('Synced',
                               style: TextStyle(
-                                  color: AppTheme.accentCyan,
-                                  fontSize: 9)),
+                                  color: AppTheme.accentCyan, fontSize: 9)),
                         ],
                       ),
                   ],
@@ -435,8 +437,7 @@ class _AdminScreenState extends State<AdminScreen> {
             max: 15,
             color: AppTheme.accentCyan,
             valueLabel: '${provider.demoGsr.toStringAsFixed(1)} μS',
-            onChangeEnd: (v) =>
-                _withPushFeedback(() => provider.setDemoGsr(v)),
+            onChangeEnd: (v) => _withPushFeedback(() => provider.setDemoGsr(v)),
           ),
           _divider(),
           _cloudSlider(
@@ -449,6 +450,208 @@ class _AdminScreenState extends State<AdminScreen> {
             valueLabel: '${provider.demoBodyTemp.toStringAsFixed(1)} °C',
             onChangeEnd: (v) =>
                 _withPushFeedback(() => provider.setDemoBodyTemp(v)),
+          ),
+        ],
+      ),
+    );
+  }
+
+  // ── MPU6050 sliders card ───────────────────────────────────────────────
+  Widget _mpuSlidersCard(AppProvider provider) {
+    return Container(
+      decoration: AppTheme.cardDecoration(),
+      padding: const EdgeInsets.all(16),
+      child: Column(
+        crossAxisAlignment: CrossAxisAlignment.start,
+        children: [
+          // ── Section header ──────────────────────────────────────────────
+          Row(children: [
+            Container(
+              padding: const EdgeInsets.all(6),
+              decoration: BoxDecoration(
+                color: const Color(0xFF7B61FF).withOpacity(0.15),
+                borderRadius: BorderRadius.circular(8),
+              ),
+              child: const Icon(Icons.screen_rotation_alt,
+                  color: Color(0xFF7B61FF), size: 14),
+            ),
+            const SizedBox(width: 8),
+            const Text('Orientation (Roll / Pitch)',
+                style: TextStyle(
+                    color: AppTheme.textSecondary,
+                    fontSize: 11,
+                    fontWeight: FontWeight.w600,
+                    letterSpacing: 0.5)),
+          ]),
+          const SizedBox(height: 10),
+
+          // ── Roll ─────────────────────────────────────────────────────────
+          _cloudSlider(
+            context: context,
+            label: '↔️ Roll',
+            value: provider.demoMpuRoll.clamp(-180.0, 180.0),
+            min: -180,
+            max: 180,
+            color: const Color(0xFF7B61FF),
+            valueLabel: '${provider.demoMpuRoll.toStringAsFixed(1)}°',
+            onChangeEnd: (v) =>
+                _withPushFeedback(() => provider.setDemoMpuValues(roll: v)),
+          ),
+          _divider(),
+
+          // ── Pitch ────────────────────────────────────────────────────────
+          _cloudSlider(
+            context: context,
+            label: '↕️ Pitch',
+            value: provider.demoMpuPitch.clamp(-90.0, 90.0),
+            min: -90,
+            max: 90,
+            color: const Color(0xFF7B61FF),
+            valueLabel: '${provider.demoMpuPitch.toStringAsFixed(1)}°',
+            onChangeEnd: (v) =>
+                _withPushFeedback(() => provider.setDemoMpuValues(pitch: v)),
+          ),
+          _divider(),
+
+          // ── Linear acceleration header ──────────────────────────────────
+          Row(children: [
+            Container(
+              padding: const EdgeInsets.all(6),
+              decoration: BoxDecoration(
+                color: AppTheme.accentCyan.withOpacity(0.15),
+                borderRadius: BorderRadius.circular(8),
+              ),
+              child:
+                  const Icon(Icons.speed, color: AppTheme.accentCyan, size: 14),
+            ),
+            const SizedBox(width: 8),
+            const Text('Linear Acceleration (m/s²)',
+                style: TextStyle(
+                    color: AppTheme.textSecondary,
+                    fontSize: 11,
+                    fontWeight: FontWeight.w600,
+                    letterSpacing: 0.5)),
+          ]),
+          const SizedBox(height: 10),
+
+          _cloudSlider(
+            context: context,
+            label: '➡️ Linear X',
+            value: provider.demoMpuLinearX.clamp(-20.0, 20.0),
+            min: -20,
+            max: 20,
+            color: AppTheme.accentCyan,
+            valueLabel: '${provider.demoMpuLinearX.toStringAsFixed(2)} m/s²',
+            onChangeEnd: (v) =>
+                _withPushFeedback(() => provider.setDemoMpuValues(linearX: v)),
+          ),
+          _divider(),
+
+          _cloudSlider(
+            context: context,
+            label: '⬆️ Linear Y',
+            value: provider.demoMpuLinearY.clamp(-20.0, 20.0),
+            min: -20,
+            max: 20,
+            color: AppTheme.accentCyan,
+            valueLabel: '${provider.demoMpuLinearY.toStringAsFixed(2)} m/s²',
+            onChangeEnd: (v) =>
+                _withPushFeedback(() => provider.setDemoMpuValues(linearY: v)),
+          ),
+          _divider(),
+
+          _cloudSlider(
+            context: context,
+            label: '🔽 Linear Z',
+            value: provider.demoMpuLinearZ.clamp(0.0, 20.0),
+            min: 0,
+            max: 20,
+            color: AppTheme.accentCyan,
+            valueLabel: '${provider.demoMpuLinearZ.toStringAsFixed(2)} m/s²',
+            onChangeEnd: (v) =>
+                _withPushFeedback(() => provider.setDemoMpuValues(linearZ: v)),
+          ),
+          _divider(),
+
+          // ── Rotational header ──────────────────────────────────────────
+          Row(children: [
+            Container(
+              padding: const EdgeInsets.all(6),
+              decoration: BoxDecoration(
+                color: AppTheme.accentOrange.withOpacity(0.15),
+                borderRadius: BorderRadius.circular(8),
+              ),
+              child: const Icon(Icons.rotate_90_degrees_ccw,
+                  color: AppTheme.accentOrange, size: 14),
+            ),
+            const SizedBox(width: 8),
+            const Text('Rotational / Gyroscope (°/s)',
+                style: TextStyle(
+                    color: AppTheme.textSecondary,
+                    fontSize: 11,
+                    fontWeight: FontWeight.w600,
+                    letterSpacing: 0.5)),
+          ]),
+          const SizedBox(height: 10),
+
+          _cloudSlider(
+            context: context,
+            label: '🔄 Rot X',
+            value: provider.demoMpuRotX.clamp(-500.0, 500.0),
+            min: -500,
+            max: 500,
+            color: AppTheme.accentOrange,
+            valueLabel: '${provider.demoMpuRotX.toStringAsFixed(1)} °/s',
+            onChangeEnd: (v) =>
+                _withPushFeedback(() => provider.setDemoMpuValues(rotX: v)),
+          ),
+          _divider(),
+
+          _cloudSlider(
+            context: context,
+            label: '🔄 Rot Y',
+            value: provider.demoMpuRotY.clamp(-500.0, 500.0),
+            min: -500,
+            max: 500,
+            color: AppTheme.accentOrange,
+            valueLabel: '${provider.demoMpuRotY.toStringAsFixed(1)} °/s',
+            onChangeEnd: (v) =>
+                _withPushFeedback(() => provider.setDemoMpuValues(rotY: v)),
+          ),
+          _divider(),
+
+          _cloudSlider(
+            context: context,
+            label: '🔄 Rot Z',
+            value: provider.demoMpuRotZ.clamp(-500.0, 500.0),
+            min: -500,
+            max: 500,
+            color: AppTheme.accentOrange,
+            valueLabel: '${provider.demoMpuRotZ.toStringAsFixed(1)} °/s',
+            onChangeEnd: (v) =>
+                _withPushFeedback(() => provider.setDemoMpuValues(rotZ: v)),
+          ),
+
+          const SizedBox(height: 8),
+          // Info footer
+          Container(
+            padding: const EdgeInsets.all(10),
+            decoration: BoxDecoration(
+              color: AppTheme.borderColor.withOpacity(0.3),
+              borderRadius: BorderRadius.circular(8),
+            ),
+            child: const Row(children: [
+              Icon(Icons.info_outline, color: AppTheme.textMuted, size: 12),
+              SizedBox(width: 6),
+              Expanded(
+                child: Text(
+                  'These values are shown as read-only on the user-facing Fall Detection card. '
+                  'When ESP32 is live, real MPU6050 data overrides these.',
+                  style: TextStyle(
+                      color: AppTheme.textMuted, fontSize: 10, height: 1.4),
+                ),
+              ),
+            ]),
           ),
         ],
       ),
@@ -494,8 +697,8 @@ class _AdminScreenState extends State<AdminScreen> {
             children: [
               _previewMetric('❤️', '${provider.heartRate.toStringAsFixed(0)}',
                   'BPM', AppTheme.accentRed),
-              _previewMetric('⚡', '${provider.gsr.toStringAsFixed(1)}',
-                  'μS', AppTheme.accentCyan),
+              _previewMetric('⚡', '${provider.gsr.toStringAsFixed(1)}', 'μS',
+                  AppTheme.accentCyan),
               _previewMetric('🌡️', '${provider.bodyTemp.toStringAsFixed(1)}',
                   '°C', AppTheme.accentOrange),
             ],
@@ -528,11 +731,9 @@ class _AdminScreenState extends State<AdminScreen> {
         style: const TextStyle(color: AppTheme.textMuted, fontSize: 11),
       );
 
-  Widget _divider() =>
-      const Divider(color: AppTheme.borderColor, height: 20);
+  Widget _divider() => const Divider(color: AppTheme.borderColor, height: 20);
 
-  Widget _previewMetric(
-      String emoji, String value, String unit, Color color) {
+  Widget _previewMetric(String emoji, String value, String unit, Color color) {
     return Column(
       children: [
         Text(emoji, style: const TextStyle(fontSize: 18)),
@@ -541,8 +742,8 @@ class _AdminScreenState extends State<AdminScreen> {
             style: TextStyle(
                 color: color, fontSize: 18, fontWeight: FontWeight.bold)),
         Text(unit,
-            style: const TextStyle(
-                color: AppTheme.textSecondary, fontSize: 10)),
+            style:
+                const TextStyle(color: AppTheme.textSecondary, fontSize: 10)),
       ],
     );
   }
@@ -570,8 +771,8 @@ class _AdminScreenState extends State<AdminScreen> {
                         color: AppTheme.textPrimary, fontSize: 13)),
                 const Spacer(),
                 Container(
-                  padding: const EdgeInsets.symmetric(
-                      horizontal: 10, vertical: 4),
+                  padding:
+                      const EdgeInsets.symmetric(horizontal: 10, vertical: 4),
                   decoration: BoxDecoration(
                     color: color.withOpacity(0.15),
                     borderRadius: BorderRadius.circular(8),
@@ -595,8 +796,7 @@ class _AdminScreenState extends State<AdminScreen> {
                 thumbColor: color,
                 overlayColor: color.withOpacity(0.2),
                 trackHeight: 4,
-                thumbShape:
-                    const RoundSliderThumbShape(enabledThumbRadius: 8),
+                thumbShape: const RoundSliderThumbShape(enabledThumbRadius: 8),
               ),
               child: Slider(
                 value: value.clamp(min, max),

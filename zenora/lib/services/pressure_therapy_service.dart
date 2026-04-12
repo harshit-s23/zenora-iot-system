@@ -1,11 +1,15 @@
 // lib/services/pressure_therapy_service.dart
 //
-// Pressure Therapy Service — controls both phone vibration AND
-// sends commands to ESP32 hardware over WiFi.
+// Pressure Therapy Service — controls phone vibration, sends commands to
+// ESP32 hardware over WiFi, AND drives the haptic motor on ESP32 pin D19.
 //
-// Hardware integration: ESP32 listens on /therapy/start, /therapy/stop,
-// /therapy/intensity with intensity 0–255.
-// Flutter sends HTTP commands; ESP32 drives the actual pressure actuator.
+// Hardware integration:
+//   POST /therapy/command  → pressure actuator (existing)
+//   POST /haptic/command   → haptic motor on D19 (NEW)
+//     Body: { "command": "start"|"stop"|"pulse", "intensity": 0-255, "duration": ms }
+//
+// Admin override: sendHapticForStress(stressIndex) fires a single haptic
+// pulse scaled to the manipulated stress value (used by admin slider).
 
 import 'dart:async';
 import 'dart:convert';
@@ -35,17 +39,17 @@ class PressureTherapyService {
   // 11-step intensity curve: ramp up → peak → ramp down
   // Maps to 0–255 for ESP32 PWM and vibration amplitude
   static const List<int> intensityCurve = [
-    60,
-    100,
-    140,
-    180,
-    220,
-    255,
-    255,
-    220,
-    180,
-    140,
-    80
+    55, // cycle 1  — gentle wake-up
+    85, // cycle 2  — light pressure
+    115, // cycle 3  — building
+    145, // cycle 4  — transition
+    175, // cycle 5  — pre-peak
+    200, // cycle 6  — therapeutic peak ✅
+    210, // cycle 7  — sustained peak ✅
+    175, // cycle 8  — begin release
+    140, // cycle 9  — ramp-down
+    90, // cycle 10 — winding down
+    55, // cycle 11 — gentle close (mirrors cycle 1)
   ];
 
   // Callbacks
@@ -95,6 +99,9 @@ class PressureTherapyService {
     onSessionComplete = onComplete;
 
     await _sendHardwareCommand('start', intensity: intensityCurve[0]);
+    // Notify haptic motor on D19 that therapy is starting
+    await _sendHapticCommand('start',
+        intensity: intensityCurve[0], duration: 900);
     _runNextCycle();
   }
 
@@ -105,6 +112,7 @@ class PressureTherapyService {
     _cycleTimer?.cancel();
     _cycleTimer = null;
     _sendHardwareCommand('stop', intensity: 0);
+    _sendHapticCommand('stop', intensity: 0, duration: 0);
     _vibrate(0);
   }
 
@@ -123,8 +131,11 @@ class PressureTherapyService {
     // Drive phone vibration (mirrors hardware)
     _vibrate(intensity);
 
-    // Drive hardware
+    // Drive pressure actuator hardware
     _sendHardwareCommand('intensity', intensity: intensity);
+
+    // Drive haptic motor on ESP32 D19 — pulse mirrors the therapy cycle
+    _sendHapticCommand('pulse', intensity: intensity, duration: 900);
 
     onCycleUpdate?.call();
 
@@ -196,6 +207,55 @@ class PressureTherapyService {
       hardwareConnected = false;
       return false;
     }
+  }
+
+  // ── Haptic motor (D19) HTTP commands ──────────────────────────────────────
+  //
+  // ESP32 endpoint contract:
+  //   POST /haptic/command
+  //   Body: { "command": "start"|"stop"|"pulse", "intensity": 0-255, "duration": ms }
+  //
+  // ESP32: drives PWM on GPIO 19 (D19) for the haptic motor.
+
+  Future<bool> _sendHapticCommand(String command,
+      {int intensity = 0, int duration = 900}) async {
+    if (!hardwareConnected) return false;
+    try {
+      final response = await http
+          .post(
+            Uri.parse('$_baseUrl/haptic/command'),
+            headers: {'Content-Type': 'application/json'},
+            body: jsonEncode({
+              'command': command,
+              'intensity': intensity,
+              'duration': duration
+            }),
+          )
+          .timeout(const Duration(milliseconds: 500));
+
+      final ok = response.statusCode == 200;
+      debugPrint(
+          '[HapticMotor D19] command=$command intensity=$intensity duration=${duration}ms → ${ok ? "OK" : "FAIL"}');
+      return ok;
+    } catch (e) {
+      debugPrint('[HapticMotor D19] error: $e');
+      return false;
+    }
+  }
+
+  /// Called by admin panel when stress index is manually overridden.
+  /// Fires a single haptic pulse on D19 scaled to the stress value (0–100).
+  /// Intensity is linearly mapped: stress 0 → amplitude 30, stress 100 → 255.
+  Future<void> sendHapticForStress(double stressIndex) async {
+    final int amplitude =
+        (30 + ((stressIndex / 100.0) * 225)).round().clamp(30, 255);
+    // Duration also scales with stress: 200ms at 0 → 800ms at 100
+    final int duration =
+        (200 + ((stressIndex / 100.0) * 600)).round().clamp(200, 800);
+
+    debugPrint(
+        '[HapticMotor D19] Admin stress override → pulse amplitude=$amplitude duration=${duration}ms');
+    await _sendHapticCommand('pulse', intensity: amplitude, duration: duration);
   }
 
   void dispose() => stop();

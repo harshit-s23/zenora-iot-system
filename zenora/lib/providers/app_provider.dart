@@ -412,6 +412,8 @@ class AppProvider extends ChangeNotifier {
     _demoStressIndex = v;
     notifyListeners();
     await FirebaseService.instance.updateOverrideField('stress_index', v);
+    // Fire haptic motor (D19) on ESP32 to reflect the manipulated stress value
+    PressureTherapyService.instance.sendHapticForStress(v);
   }
 
   // ─────────────────────────────────────────────────────────────────────────

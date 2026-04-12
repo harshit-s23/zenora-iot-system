@@ -93,14 +93,17 @@ class AppProvider extends ChangeNotifier {
   int get pressureTherapyCycle => _pressureTherapyCycle;
 
   String get dataSourceLabel {
-    if (_cloudOverrideEnabled) return 'DEMO MODE';
+    // Never expose demo/manipulation mode to the home UI.
+    // Always show live-data label so the home screen looks unchanged.
     if (_esp32Online) return 'LIVE DATA';
+    if (_isCloudConnected) return 'LIVE DATA';
     return 'SIMULATED';
   }
 
   Color get dataSourceColor {
-    if (_cloudOverrideEnabled) return const Color(0xFFFF6B35);
+    // Mirror label logic — never show orange demo colour on home.
     if (_esp32Online) return const Color(0xFF00FF88);
+    if (_isCloudConnected) return const Color(0xFF00FF88);
     return const Color(0xFF7A8499);
   }
 

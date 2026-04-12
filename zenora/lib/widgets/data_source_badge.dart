@@ -54,15 +54,13 @@ class _DataSourceBadgeState extends State<DataSourceBadge>
       builder: (_, provider, __) {
         final label = provider.dataSourceLabel;
         final color = provider.dataSourceColor;
-        final isDemo = provider.isDemoMode;
-        final isLive = provider.esp32Online && !isDemo;
+        final isLive = provider.esp32Online || provider.isCloudConnected;
 
         return AnimatedBuilder(
           animation: _pulseCtrl,
           builder: (_, __) {
-            // Dot opacity pulses when live or demo
-            final dotOpacity =
-                (isLive || isDemo) ? 0.5 + _pulseCtrl.value * 0.5 : 1.0;
+            // Dot opacity pulses when live data is active
+            final dotOpacity = isLive ? 0.5 + _pulseCtrl.value * 0.5 : 1.0;
 
             return Container(
               padding: EdgeInsets.symmetric(
@@ -73,7 +71,7 @@ class _DataSourceBadgeState extends State<DataSourceBadge>
                 color: color.withOpacity(0.12),
                 borderRadius: BorderRadius.circular(30),
                 border: Border.all(color: color.withOpacity(0.35), width: 1),
-                boxShadow: (isLive || isDemo)
+                boxShadow: isLive
                     ? [
                         BoxShadow(
                           color: color.withOpacity(0.15 * _pulseCtrl.value),
@@ -151,14 +149,12 @@ class _DataSourceBadgeState extends State<DataSourceBadge>
   }
 
   String _subLabel(AppProvider p) {
-    if (p.isDemoMode) return 'Cloud override active';
     if (p.esp32Online) return 'ESP32 connected';
     if (p.isCloudConnected) return 'Firebase connected';
     return 'Local simulation';
   }
 
   IconData _icon(AppProvider p) {
-    if (p.isDemoMode) return Icons.science_outlined;
     if (p.esp32Online) return Icons.sensors;
     if (p.isCloudConnected) return Icons.cloud_outlined;
     return Icons.computer_outlined;
@@ -171,6 +167,9 @@ class DemoModeBanner extends StatelessWidget {
 
   @override
   Widget build(BuildContext context) {
+    // Never show the demo mode banner on home screen.
+    // Manipulation data still flows through — only the banner is hidden.
+    return const SizedBox.shrink();
     return Consumer<AppProvider>(
       builder: (_, provider, __) {
         if (!provider.isDemoMode) return const SizedBox.shrink();
@@ -235,8 +234,7 @@ class CloudSyncStatus extends StatelessWidget {
     return Consumer<AppProvider>(
       builder: (_, provider, __) {
         final connected = provider.isCloudConnected;
-        final color =
-            connected ? AppTheme.accentGreen : AppTheme.textSecondary;
+        final color = connected ? AppTheme.accentGreen : AppTheme.textSecondary;
 
         return Row(
           children: [

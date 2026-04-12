@@ -1,6 +1,5 @@
 import 'package:flutter/foundation.dart';
 import 'package:flutter/services.dart';
-import 'package:url_launcher/url_launcher.dart';
 
 class EmergencyService {
   static final EmergencyService instance = EmergencyService._();
@@ -26,38 +25,25 @@ class EmergencyService {
     }
   }
 
+  /// Sends SMS directly via native SmsManager — no app chooser, no WhatsApp popup.
   Future<bool> sendSms(
       {required String phoneNumber, required String message}) async {
     final clean = _cleanNumber(phoneNumber);
     if (clean.isEmpty) return false;
-    final encoded = Uri.encodeComponent(message);
-    final uri = Uri.parse('sms:$clean?body=$encoded');
+    debugPrint('[EmergencyService] Sending SMS to: $clean');
     try {
-      if (await canLaunchUrl(uri)) {
-        await launchUrl(uri);
-        return true;
-      }
+      final result = await _channel
+          .invokeMethod<bool>('sendSms', {'number': clean, 'message': message});
+      debugPrint('[EmergencyService] SMS result: $result');
+      return result ?? false;
+    } on PlatformException catch (e) {
+      debugPrint(
+          '[EmergencyService] SMS PlatformException: ${e.code} — ${e.message}');
+      return false;
     } catch (e) {
-      debugPrint('[EmergencyService] SMS error: $e');
+      debugPrint('[EmergencyService] SMS Unknown error: $e');
+      return false;
     }
-    return false;
-  }
-
-  Future<bool> sendWhatsApp(
-      {required String phoneNumber, required String message}) async {
-    final clean = _cleanNumber(phoneNumber);
-    if (clean.isEmpty) return false;
-    final encoded = Uri.encodeComponent(message);
-    final uri = Uri.parse('https://wa.me/$clean?text=$encoded');
-    try {
-      if (await canLaunchUrl(uri)) {
-        await launchUrl(uri, mode: LaunchMode.externalApplication);
-        return true;
-      }
-    } catch (e) {
-      debugPrint('[EmergencyService] WhatsApp error: $e');
-    }
-    return false;
   }
 
   Future<void> triggerFullAlert({

@@ -1,4 +1,4 @@
-// lib/screens/home_screen.dart  [v4]
+// lib/screens/home_screen.dart  [v5]
 import 'package:flutter/material.dart';
 import 'package:provider/provider.dart';
 import '../providers/app_provider.dart';
@@ -33,22 +33,23 @@ class _HomeScreenState extends State<HomeScreen> {
 
   void _onProviderChange() {
     if (_provider == null || !mounted) return;
-
-    // Only show dialog when Home is the active screen (not while admin is open)
     final isCurrentRoute = ModalRoute.of(context)?.isCurrent ?? false;
-
     if (_provider!.isFallDetected && !_dialogActive && isCurrentRoute) {
-      _dialogActive = true;
-      WidgetsBinding.instance.addPostFrameCallback((_) {
-        if (!mounted) return;
-        showDialog<void>(
-          context: context,
-          barrierDismissible: false,
-          barrierColor: Colors.black.withOpacity(0.75),
-          builder: (_) => const EmergencyCountdownDialog(),
-        ).then((_) => _dialogActive = false);
-      });
+      _showFallDialog();
     }
+  }
+
+  void _showFallDialog() {
+    _dialogActive = true;
+    WidgetsBinding.instance.addPostFrameCallback((_) {
+      if (!mounted) return;
+      showDialog<void>(
+        context: context,
+        barrierDismissible: false,
+        barrierColor: Colors.black.withOpacity(0.75),
+        builder: (_) => const EmergencyCountdownDialog(),
+      ).then((_) => _dialogActive = false);
+    });
   }
 
   @override
@@ -59,6 +60,20 @@ class _HomeScreenState extends State<HomeScreen> {
 
   @override
   Widget build(BuildContext context) {
+    // Register this widget as a dependent of the current route.
+    // When admin pops and home becomes isCurrent again, Flutter rebuilds here,
+    // and we immediately check whether the fall popup is still pending.
+    final isCurrentRoute = ModalRoute.of(context)?.isCurrent ?? false;
+    if (isCurrentRoute && _provider?.isFallDetected == true && !_dialogActive) {
+      WidgetsBinding.instance.addPostFrameCallback((_) {
+        if (mounted &&
+            !_dialogActive &&
+            (ModalRoute.of(context)?.isCurrent ?? false)) {
+          _showFallDialog();
+        }
+      });
+    }
+
     return Consumer<AppProvider>(
       builder: (context, provider, _) {
         final stress = provider.stressIndex;
@@ -275,29 +290,6 @@ class _HomeScreenState extends State<HomeScreen> {
                   letterSpacing: 1.5)),
         ]),
         const Spacer(),
-        // Internal test button — tap to test the emergency dialog
-        GestureDetector(
-          onTap: () async => provider.triggerFallManually(),
-          child: Container(
-            margin: const EdgeInsets.only(right: 10),
-            padding: const EdgeInsets.symmetric(horizontal: 10, vertical: 6),
-            decoration: BoxDecoration(
-              color: AppTheme.accentRed.withOpacity(0.12),
-              borderRadius: BorderRadius.circular(8),
-              border: Border.all(color: AppTheme.accentRed.withOpacity(0.4)),
-            ),
-            child: const Row(mainAxisSize: MainAxisSize.min, children: [
-              Icon(Icons.warning_amber_rounded,
-                  color: AppTheme.accentRed, size: 14),
-              SizedBox(width: 4),
-              Text('Fall',
-                  style: TextStyle(
-                      color: AppTheme.accentRed,
-                      fontSize: 11,
-                      fontWeight: FontWeight.w600)),
-            ]),
-          ),
-        ),
         DataSourceBadge(showIcon: true),
       ]),
     );

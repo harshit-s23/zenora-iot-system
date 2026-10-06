@@ -45,13 +45,16 @@ class _AdminScreenState extends State<AdminScreen> {
                 const Icon(Icons.admin_panel_settings,
                     color: AppTheme.accentOrange, size: 20),
                 const SizedBox(width: 8),
-                const Text('Admin / Demo Panel'),
-                const Spacer(),
+                const Expanded(
+                  child: Text('Admin / Demo Panel',
+                      overflow: TextOverflow.ellipsis),
+                ),
                 // Cloud push indicator
                 AnimatedOpacity(
                   opacity: _isPushing ? 1.0 : 0.0,
                   duration: const Duration(milliseconds: 200),
                   child: Row(
+                    mainAxisSize: MainAxisSize.min,
                     children: const [
                       SizedBox(
                         width: 12,

@@ -65,6 +65,7 @@ class _HomeScreenState extends State<HomeScreen> {
         final color = AppTheme.stressColor(stress);
         final label = AppTheme.stressLabel(stress);
         final recs = AppTheme.stressRecommendations(stress);
+        final isExercise = provider.isExerciseMode;
 
         return Scaffold(
           backgroundColor: AppTheme.background,
@@ -74,67 +75,94 @@ class _HomeScreenState extends State<HomeScreen> {
                 SliverToBoxAdapter(child: _buildAppBar(context, provider)),
                 const SliverToBoxAdapter(child: DemoModeBanner()),
 
-                // Stress Gauge
+                // ── Exercise Mode Toggle Banner ──────────────────────────
                 SliverToBoxAdapter(
                   child: Padding(
                     padding: const EdgeInsets.fromLTRB(16, 8, 16, 0),
-                    child: Container(
-                      decoration: AppTheme.glowDecoration(color),
-                      padding: const EdgeInsets.all(20),
-                      child: Column(
-                        children: [
-                          Row(children: [
-                            Container(
-                              width: 8,
-                              height: 8,
-                              decoration: BoxDecoration(
-                                color: color,
-                                shape: BoxShape.circle,
-                                boxShadow: [
-                                  BoxShadow(
-                                      color: color.withOpacity(0.6),
-                                      blurRadius: 6)
-                                ],
+                    child: _exerciseModeToggle(provider),
+                  ),
+                ),
+
+                // ── Exercise Alert Banner ────────────────────────────────
+                if (provider.exerciseAlert != null)
+                  SliverToBoxAdapter(
+                    child: Padding(
+                      padding: const EdgeInsets.fromLTRB(16, 10, 16, 0),
+                      child: _exerciseAlertBanner(provider),
+                    ),
+                  ),
+
+                // ── Exercise Mode: Live Monitoring Card (replaces stress) ─
+                if (isExercise)
+                  SliverToBoxAdapter(
+                    child: Padding(
+                      padding: const EdgeInsets.fromLTRB(16, 12, 16, 0),
+                      child: _exerciseMonitoringCard(provider),
+                    ),
+                  ),
+
+                // ── Normal Mode: Stress Gauge ────────────────────────────
+                if (!isExercise)
+                  SliverToBoxAdapter(
+                    child: Padding(
+                      padding: const EdgeInsets.fromLTRB(16, 8, 16, 0),
+                      child: Container(
+                        decoration: AppTheme.glowDecoration(color),
+                        padding: const EdgeInsets.all(20),
+                        child: Column(
+                          children: [
+                            Row(children: [
+                              Container(
+                                width: 8,
+                                height: 8,
+                                decoration: BoxDecoration(
+                                  color: color,
+                                  shape: BoxShape.circle,
+                                  boxShadow: [
+                                    BoxShadow(
+                                        color: color.withOpacity(0.6),
+                                        blurRadius: 6)
+                                  ],
+                                ),
                               ),
+                              const SizedBox(width: 8),
+                              const Text('REAL-TIME STRESS INDEX',
+                                  style: TextStyle(
+                                      color: AppTheme.textSecondary,
+                                      fontSize: 12,
+                                      fontWeight: FontWeight.w600,
+                                      letterSpacing: 1.2)),
+                            ]),
+                            const SizedBox(height: 20),
+                            SizedBox(
+                                width: 200,
+                                height: 200,
+                                child: StressGaugeWidget(stressIndex: stress)),
+                            const SizedBox(height: 16),
+                            Container(
+                              padding: const EdgeInsets.symmetric(
+                                  horizontal: 28, vertical: 10),
+                              decoration: BoxDecoration(
+                                color: color.withOpacity(0.15),
+                                borderRadius: BorderRadius.circular(30),
+                                border: Border.all(color: color.withOpacity(0.4)),
+                              ),
+                              child: Text(label,
+                                  style: TextStyle(
+                                      color: color,
+                                      fontSize: 16,
+                                      fontWeight: FontWeight.w700,
+                                      letterSpacing: 0.5)),
                             ),
-                            const SizedBox(width: 8),
-                            const Text('REAL-TIME STRESS INDEX',
-                                style: TextStyle(
-                                    color: AppTheme.textSecondary,
-                                    fontSize: 12,
-                                    fontWeight: FontWeight.w600,
-                                    letterSpacing: 1.2)),
-                          ]),
-                          const SizedBox(height: 20),
-                          SizedBox(
-                              width: 200,
-                              height: 200,
-                              child: StressGaugeWidget(stressIndex: stress)),
-                          const SizedBox(height: 16),
-                          Container(
-                            padding: const EdgeInsets.symmetric(
-                                horizontal: 28, vertical: 10),
-                            decoration: BoxDecoration(
-                              color: color.withOpacity(0.15),
-                              borderRadius: BorderRadius.circular(30),
-                              border: Border.all(color: color.withOpacity(0.4)),
-                            ),
-                            child: Text(label,
-                                style: TextStyle(
-                                    color: color,
-                                    fontSize: 16,
-                                    fontWeight: FontWeight.w700,
-                                    letterSpacing: 0.5)),
-                          ),
-                          const SizedBox(height: 6),
-                          Text(_stressMessage(stress),
-                              style: const TextStyle(
-                                  color: AppTheme.textSecondary, fontSize: 13)),
-                        ],
+                            const SizedBox(height: 6),
+                            Text(_stressMessage(stress),
+                                style: const TextStyle(
+                                    color: AppTheme.textSecondary, fontSize: 13)),
+                          ],
+                        ),
                       ),
                     ),
                   ),
-                ),
 
                 // Quick Metrics
                 SliverToBoxAdapter(
@@ -156,51 +184,60 @@ class _HomeScreenState extends State<HomeScreen> {
                           '${provider.bodyTemp.toStringAsFixed(1)}',
                           '°C  Temp',
                           AppTheme.accentOrange),
+                      const SizedBox(width: 10),
+                      _quickMetric(
+                          '🫁',
+                          provider.hasSpo2Reading
+                              ? provider.spo2.toStringAsFixed(0)
+                              : '--',
+                          '%  SpO₂',
+                          AppTheme.accentPurple),
                     ]),
                   ),
                 ),
 
-                // Recommendations
-                SliverToBoxAdapter(
-                  child: Padding(
-                    padding: const EdgeInsets.fromLTRB(16, 0, 16, 8),
-                    child: Container(
-                      decoration: AppTheme.cardDecoration(),
-                      padding: const EdgeInsets.all(16),
-                      child: Column(
-                        crossAxisAlignment: CrossAxisAlignment.start,
-                        children: [
-                          Row(children: [
-                            Icon(Icons.lightbulb_outline,
-                                color: color, size: 18),
-                            const SizedBox(width: 8),
-                            const Text('Recommended Actions',
-                                style: TextStyle(
-                                    color: AppTheme.textPrimary,
-                                    fontSize: 15,
-                                    fontWeight: FontWeight.w600)),
-                            const Spacer(),
-                            Container(
-                              padding: const EdgeInsets.symmetric(
-                                  horizontal: 8, vertical: 3),
-                              decoration: BoxDecoration(
-                                  color: color.withOpacity(0.15),
-                                  borderRadius: BorderRadius.circular(10)),
-                              child: Text(label,
+                // Recommendations (hidden in exercise mode)
+                if (!isExercise)
+                  SliverToBoxAdapter(
+                    child: Padding(
+                      padding: const EdgeInsets.fromLTRB(16, 0, 16, 8),
+                      child: Container(
+                        decoration: AppTheme.cardDecoration(),
+                        padding: const EdgeInsets.all(16),
+                        child: Column(
+                          crossAxisAlignment: CrossAxisAlignment.start,
+                          children: [
+                            Row(children: [
+                              Icon(Icons.lightbulb_outline,
+                                  color: color, size: 18),
+                              const SizedBox(width: 8),
+                              const Text('Recommended Actions',
                                   style: TextStyle(
-                                      color: color,
-                                      fontSize: 11,
+                                      color: AppTheme.textPrimary,
+                                      fontSize: 15,
                                       fontWeight: FontWeight.w600)),
-                            ),
-                          ]),
-                          const SizedBox(height: 14),
-                          if (stress > 75) const PressureTherapyCard(),
-                          ...recs.map((rec) => _recTile(rec, color)),
-                        ],
+                              const Spacer(),
+                              Container(
+                                padding: const EdgeInsets.symmetric(
+                                    horizontal: 8, vertical: 3),
+                                decoration: BoxDecoration(
+                                    color: color.withOpacity(0.15),
+                                    borderRadius: BorderRadius.circular(10)),
+                                child: Text(label,
+                                    style: TextStyle(
+                                        color: color,
+                                        fontSize: 11,
+                                        fontWeight: FontWeight.w600)),
+                              ),
+                            ]),
+                            const SizedBox(height: 14),
+                            if (stress > 75) const PressureTherapyCard(),
+                            ...recs.map((rec) => _recTile(rec, color)),
+                          ],
+                        ),
                       ),
                     ),
                   ),
-                ),
 
                 // Live Heart Rate
                 SliverToBoxAdapter(
@@ -216,13 +253,16 @@ class _HomeScreenState extends State<HomeScreen> {
                             const Icon(Icons.favorite,
                                 color: AppTheme.accentRed, size: 16),
                             const SizedBox(width: 8),
-                            Text(
-                                'LIVE HEART RATE  ${provider.heartRate.toStringAsFixed(0)} BPM',
-                                style: const TextStyle(
-                                    color: AppTheme.textPrimary,
-                                    fontSize: 13,
-                                    fontWeight: FontWeight.w600)),
-                            const Spacer(),
+                            Expanded(
+                              child: Text(
+                                  'LIVE HEART RATE  ${provider.heartRate.toStringAsFixed(0)} BPM',
+                                  overflow: TextOverflow.ellipsis,
+                                  style: const TextStyle(
+                                      color: AppTheme.textPrimary,
+                                      fontSize: 13,
+                                      fontWeight: FontWeight.w600)),
+                            ),
+                            const SizedBox(width: 8),
                             _liveDot(),
                           ]),
                           const SizedBox(height: 12),
@@ -301,24 +341,29 @@ class _HomeScreenState extends State<HomeScreen> {
                     fontWeight: FontWeight.w600)),
             const Spacer(),
             // Status badge
-            AnimatedContainer(
-              duration: const Duration(milliseconds: 300),
-              padding: const EdgeInsets.symmetric(horizontal: 10, vertical: 5),
-              decoration: BoxDecoration(
-                color: statusColor.withOpacity(0.15),
-                borderRadius: BorderRadius.circular(20),
-                border: Border.all(color: statusColor.withOpacity(0.4)),
+            Flexible(
+              child: AnimatedContainer(
+                duration: const Duration(milliseconds: 300),
+                padding: const EdgeInsets.symmetric(horizontal: 10, vertical: 5),
+                decoration: BoxDecoration(
+                  color: statusColor.withOpacity(0.15),
+                  borderRadius: BorderRadius.circular(20),
+                  border: Border.all(color: statusColor.withOpacity(0.4)),
+                ),
+                child: Row(mainAxisSize: MainAxisSize.min, children: [
+                  Icon(statusIcon, color: statusColor, size: 12),
+                  const SizedBox(width: 5),
+                  Flexible(
+                    child: Text(statusLabel,
+                        overflow: TextOverflow.ellipsis,
+                        style: TextStyle(
+                            color: statusColor,
+                            fontSize: 11,
+                            fontWeight: FontWeight.w700,
+                            letterSpacing: 0.5)),
+                  ),
+                ]),
               ),
-              child: Row(mainAxisSize: MainAxisSize.min, children: [
-                Icon(statusIcon, color: statusColor, size: 12),
-                const SizedBox(width: 5),
-                Text(statusLabel,
-                    style: TextStyle(
-                        color: statusColor,
-                        fontSize: 11,
-                        fontWeight: FontWeight.w700,
-                        letterSpacing: 0.5)),
-              ]),
             ),
           ]),
 
@@ -452,25 +497,26 @@ class _HomeScreenState extends State<HomeScreen> {
           child: const Icon(Icons.monitor_heart, color: Colors.white, size: 20),
         ),
         const SizedBox(width: 10),
-        Column(crossAxisAlignment: CrossAxisAlignment.start, children: const [
-          Text('Zenora',
-              style: TextStyle(
-                  color: AppTheme.textPrimary,
-                  fontSize: 20,
-                  fontWeight: FontWeight.bold)),
-          Text('HEALTH INTELLIGENCE',
-              style: TextStyle(
-                  color: AppTheme.textSecondary,
-                  fontSize: 9,
-                  letterSpacing: 1.5)),
-        ]),
-        const Spacer(),
+        Expanded(
+          child: Column(crossAxisAlignment: CrossAxisAlignment.start, children: const [
+            Text('Zenora',
+                style: TextStyle(
+                    color: AppTheme.textPrimary,
+                    fontSize: 20,
+                    fontWeight: FontWeight.bold)),
+            Text('HEALTH INTELLIGENCE',
+                style: TextStyle(
+                    color: AppTheme.textSecondary,
+                    fontSize: 9,
+                    letterSpacing: 1.5)),
+          ]),
+        ),
         // Internal test button — tap to test the emergency dialog
         GestureDetector(
           onTap: () async => provider.triggerFallManually(),
           child: Container(
-            margin: const EdgeInsets.only(right: 10),
-            padding: const EdgeInsets.symmetric(horizontal: 10, vertical: 6),
+            margin: const EdgeInsets.only(right: 8),
+            padding: const EdgeInsets.symmetric(horizontal: 8, vertical: 6),
             decoration: BoxDecoration(
               color: AppTheme.accentRed.withOpacity(0.12),
               borderRadius: BorderRadius.circular(8),
@@ -488,7 +534,7 @@ class _HomeScreenState extends State<HomeScreen> {
             ]),
           ),
         ),
-        DataSourceBadge(showIcon: true),
+        Flexible(child: DataSourceBadge(showIcon: true)),
       ]),
     );
   }
@@ -553,5 +599,429 @@ class _HomeScreenState extends State<HomeScreen> {
     if (stress <= 70) return 'Moderate stress detected';
     if (stress <= 85) return 'High stress — take action now';
     return 'Very high stress — urgent attention needed';
+  }
+
+  // ═══════════════════════════════════════════════════════════════════════════
+  // EXERCISE MODE WIDGETS
+  // ═══════════════════════════════════════════════════════════════════════════
+
+  Widget _exerciseModeToggle(AppProvider provider) {
+    final isActive = provider.isExerciseMode;
+    final activeColor = const Color(0xFF00E676); // bright green
+    final inactiveColor = AppTheme.textSecondary;
+
+    return AnimatedContainer(
+      duration: const Duration(milliseconds: 350),
+      curve: Curves.easeInOut,
+      decoration: BoxDecoration(
+        color: AppTheme.cardBg,
+        borderRadius: BorderRadius.circular(16),
+        border: Border.all(
+          color: isActive
+              ? activeColor.withOpacity(0.5)
+              : AppTheme.borderColor,
+          width: isActive ? 1.5 : 1,
+        ),
+        boxShadow: isActive
+            ? [
+                BoxShadow(
+                  color: activeColor.withOpacity(0.15),
+                  blurRadius: 16,
+                  spreadRadius: 2,
+                ),
+              ]
+            : [],
+      ),
+      padding: const EdgeInsets.symmetric(horizontal: 16, vertical: 14),
+      child: Row(
+        children: [
+          AnimatedContainer(
+            duration: const Duration(milliseconds: 300),
+            padding: const EdgeInsets.all(8),
+            decoration: BoxDecoration(
+              color: isActive
+                  ? activeColor.withOpacity(0.15)
+                  : AppTheme.cardBg2,
+              borderRadius: BorderRadius.circular(10),
+            ),
+            child: Icon(
+              isActive ? Icons.fitness_center : Icons.fitness_center_outlined,
+              color: isActive ? activeColor : inactiveColor,
+              size: 20,
+            ),
+          ),
+          const SizedBox(width: 12),
+          Expanded(
+            child: Column(
+              crossAxisAlignment: CrossAxisAlignment.start,
+              children: [
+                Text(
+                  'Exercise Mode',
+                  style: TextStyle(
+                    color: isActive ? activeColor : AppTheme.textPrimary,
+                    fontSize: 14,
+                    fontWeight: FontWeight.w600,
+                  ),
+                ),
+                const SizedBox(height: 2),
+                Text(
+                  isActive
+                      ? 'Stress hidden • Safety alerts active'
+                      : 'Enable to hide stress during workouts',
+                  style: TextStyle(
+                    color: isActive
+                        ? activeColor.withOpacity(0.7)
+                        : AppTheme.textSecondary,
+                    fontSize: 11,
+                  ),
+                ),
+              ],
+            ),
+          ),
+          Switch.adaptive(
+            value: isActive,
+            onChanged: (v) => provider.toggleExerciseMode(v),
+            activeColor: activeColor,
+            activeTrackColor: activeColor.withOpacity(0.3),
+            inactiveThumbColor: AppTheme.textSecondary,
+            inactiveTrackColor: AppTheme.cardBg2,
+          ),
+        ],
+      ),
+    );
+  }
+
+  Widget _exerciseAlertBanner(AppProvider provider) {
+    return Container(
+      decoration: BoxDecoration(
+        color: AppTheme.accentRed.withOpacity(0.12),
+        borderRadius: BorderRadius.circular(14),
+        border: Border.all(
+          color: AppTheme.accentRed.withOpacity(0.5),
+          width: 1.5,
+        ),
+        boxShadow: [
+          BoxShadow(
+            color: AppTheme.accentRed.withOpacity(0.2),
+            blurRadius: 16,
+            spreadRadius: 1,
+          ),
+        ],
+      ),
+      padding: const EdgeInsets.all(14),
+      child: Row(
+        crossAxisAlignment: CrossAxisAlignment.start,
+        children: [
+          Container(
+            padding: const EdgeInsets.all(6),
+            decoration: BoxDecoration(
+              color: AppTheme.accentRed.withOpacity(0.2),
+              borderRadius: BorderRadius.circular(8),
+            ),
+            child: const Icon(
+              Icons.warning_rounded,
+              color: AppTheme.accentRed,
+              size: 20,
+            ),
+          ),
+          const SizedBox(width: 12),
+          Expanded(
+            child: Column(
+              crossAxisAlignment: CrossAxisAlignment.start,
+              children: [
+                const Text(
+                  'VITALS SAFETY ALERT',
+                  style: TextStyle(
+                    color: AppTheme.accentRed,
+                    fontSize: 11,
+                    fontWeight: FontWeight.w700,
+                    letterSpacing: 1,
+                  ),
+                ),
+                const SizedBox(height: 4),
+                Text(
+                  provider.exerciseAlert ?? '',
+                  style: const TextStyle(
+                    color: AppTheme.textPrimary,
+                    fontSize: 13,
+                    height: 1.4,
+                  ),
+                ),
+              ],
+            ),
+          ),
+          const SizedBox(width: 8),
+          GestureDetector(
+            onTap: () => provider.dismissExerciseAlert(),
+            child: Container(
+              padding: const EdgeInsets.all(4),
+              decoration: BoxDecoration(
+                color: AppTheme.accentRed.withOpacity(0.15),
+                borderRadius: BorderRadius.circular(6),
+              ),
+              child: const Icon(
+                Icons.close,
+                color: AppTheme.accentRed,
+                size: 16,
+              ),
+            ),
+          ),
+        ],
+      ),
+    );
+  }
+
+  Widget _exerciseMonitoringCard(AppProvider provider) {
+    return Container(
+      decoration: BoxDecoration(
+        color: AppTheme.cardBg,
+        borderRadius: BorderRadius.circular(16),
+        border: Border.all(
+          color: const Color(0xFF00E676).withOpacity(0.3),
+          width: 1,
+        ),
+        boxShadow: [
+          BoxShadow(
+            color: const Color(0xFF00E676).withOpacity(0.08),
+            blurRadius: 20,
+            spreadRadius: 2,
+          ),
+        ],
+      ),
+      padding: const EdgeInsets.all(16),
+      child: Column(
+        crossAxisAlignment: CrossAxisAlignment.start,
+        children: [
+          // Header
+          Row(
+            children: [
+              Container(
+                padding: const EdgeInsets.all(6),
+                decoration: BoxDecoration(
+                  color: const Color(0xFF00E676).withOpacity(0.15),
+                  borderRadius: BorderRadius.circular(8),
+                ),
+                child: const Icon(
+                  Icons.fitness_center,
+                  color: Color(0xFF00E676),
+                  size: 16,
+                ),
+              ),
+              const SizedBox(width: 10),
+              const Text(
+                'EXERCISE MONITORING',
+                style: TextStyle(
+                  color: AppTheme.textSecondary,
+                  fontSize: 12,
+                  fontWeight: FontWeight.w600,
+                  letterSpacing: 1.2,
+                ),
+              ),
+              const Spacer(),
+              Container(
+                padding:
+                    const EdgeInsets.symmetric(horizontal: 8, vertical: 4),
+                decoration: BoxDecoration(
+                  color: const Color(0xFF00E676).withOpacity(0.15),
+                  borderRadius: BorderRadius.circular(10),
+                  border: Border.all(
+                    color: const Color(0xFF00E676).withOpacity(0.3),
+                  ),
+                ),
+                child: Row(
+                  mainAxisSize: MainAxisSize.min,
+                  children: [
+                    Container(
+                      width: 6,
+                      height: 6,
+                      decoration: const BoxDecoration(
+                        color: Color(0xFF00E676),
+                        shape: BoxShape.circle,
+                      ),
+                    ),
+                    const SizedBox(width: 5),
+                    const Text(
+                      'ACTIVE',
+                      style: TextStyle(
+                        color: Color(0xFF00E676),
+                        fontSize: 10,
+                        fontWeight: FontWeight.w700,
+                        letterSpacing: 0.5,
+                      ),
+                    ),
+                  ],
+                ),
+              ),
+            ],
+          ),
+          const SizedBox(height: 16),
+
+          // 2×2 grid of live metrics
+          Row(
+            children: [
+              _exerciseMetric(
+                Icons.favorite,
+                'Heart Rate',
+                '${provider.heartRate.toStringAsFixed(0)}',
+                'BPM',
+                AppTheme.accentRed,
+                _isHrDanger(provider.heartRate),
+              ),
+              const SizedBox(width: 10),
+              _exerciseMetric(
+                Icons.bolt,
+                'GSR',
+                '${provider.gsr.toStringAsFixed(1)}',
+                'μS',
+                AppTheme.accentCyan,
+                provider.gsr > 12.0,
+              ),
+            ],
+          ),
+          const SizedBox(height: 10),
+          Row(
+            children: [
+              _exerciseMetric(
+                Icons.thermostat,
+                'Body Temp',
+                '${provider.bodyTemp.toStringAsFixed(1)}',
+                '°C',
+                AppTheme.accentOrange,
+                provider.bodyTemp > 39.0,
+              ),
+              const SizedBox(width: 10),
+              _exerciseMetric(
+                Icons.air,
+                'SpO2',
+                provider.hasSpo2Reading
+                    ? provider.spo2.toStringAsFixed(0)
+                    : '--',
+                '%',
+                AppTheme.accentPurple,
+                provider.hasSpo2Reading && provider.spo2 < 90,
+              ),
+            ],
+          ),
+
+          const SizedBox(height: 14),
+
+          // Info text
+          Container(
+            padding: const EdgeInsets.all(10),
+            decoration: BoxDecoration(
+              color: const Color(0xFF00E676).withOpacity(0.06),
+              borderRadius: BorderRadius.circular(10),
+              border: Border.all(
+                color: const Color(0xFF00E676).withOpacity(0.15),
+              ),
+            ),
+            child: Row(
+              children: [
+                Icon(
+                  Icons.info_outline,
+                  color: const Color(0xFF00E676).withOpacity(0.7),
+                  size: 14,
+                ),
+                const SizedBox(width: 8),
+                const Expanded(
+                  child: Text(
+                    'Stress index hidden during exercise. Safety alerts will trigger for abnormal vital ranges.',
+                    style: TextStyle(
+                      color: AppTheme.textSecondary,
+                      fontSize: 11,
+                      height: 1.4,
+                    ),
+                  ),
+                ),
+              ],
+            ),
+          ),
+        ],
+      ),
+    );
+  }
+
+  bool _isHrDanger(double hr) => hr > 180 || hr < 40;
+
+  Widget _exerciseMetric(
+    IconData icon,
+    String title,
+    String value,
+    String unit,
+    Color color,
+    bool isDanger,
+  ) {
+    final displayColor = isDanger ? AppTheme.accentRed : color;
+    return Expanded(
+      child: AnimatedContainer(
+        duration: const Duration(milliseconds: 300),
+        padding: const EdgeInsets.symmetric(vertical: 12, horizontal: 12),
+        decoration: BoxDecoration(
+          color: isDanger
+              ? AppTheme.accentRed.withOpacity(0.1)
+              : displayColor.withOpacity(0.06),
+          borderRadius: BorderRadius.circular(12),
+          border: Border.all(
+            color: isDanger
+                ? AppTheme.accentRed.withOpacity(0.5)
+                : displayColor.withOpacity(0.2),
+            width: isDanger ? 1.5 : 1,
+          ),
+        ),
+        child: Column(
+          crossAxisAlignment: CrossAxisAlignment.start,
+          children: [
+            Row(
+              children: [
+                Icon(icon, color: displayColor, size: 14),
+                const SizedBox(width: 5),
+                Expanded(
+                  child: Text(
+                    title,
+                    style: TextStyle(
+                      color: displayColor.withOpacity(0.7),
+                      fontSize: 10,
+                      fontWeight: FontWeight.w600,
+                    ),
+                    overflow: TextOverflow.ellipsis,
+                  ),
+                ),
+                if (isDanger)
+                  const Icon(
+                    Icons.warning_amber_rounded,
+                    color: AppTheme.accentRed,
+                    size: 12,
+                  ),
+              ],
+            ),
+            const SizedBox(height: 6),
+            Row(
+              crossAxisAlignment: CrossAxisAlignment.end,
+              children: [
+                Text(
+                  value,
+                  style: TextStyle(
+                    color: displayColor,
+                    fontSize: 20,
+                    fontWeight: FontWeight.bold,
+                  ),
+                ),
+                const SizedBox(width: 3),
+                Padding(
+                  padding: const EdgeInsets.only(bottom: 2),
+                  child: Text(
+                    unit,
+                    style: TextStyle(
+                      color: displayColor.withOpacity(0.6),
+                      fontSize: 11,
+                    ),
+                  ),
+                ),
+              ],
+            ),
+          ],
+        ),
+      ),
+    );
   }
 }

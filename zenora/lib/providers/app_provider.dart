@@ -24,6 +24,7 @@ class AppProvider extends ChangeNotifier {
   double _bodyTemp = 36.6;
   double _stressIndex = 34;
   double _spo2 = 98.0; // ✅ SpO2 from ESP32
+  bool _hasSpo2Reading = false;
   bool _fallFromEsp32 = false; // ✅ Fall detection from ESP32
 
   // ─── MPU6050 fall detection values ────────────────────────────────────────
@@ -58,6 +59,7 @@ class AppProvider extends ChangeNotifier {
   bool _cloudOverrideEnabled = false;
   bool _isCloudConnected = false;
   bool _esp32Online = false;
+  bool _hasFirebaseRealData = false;
   StreamSubscription<DeviceSnapshot>? _firebaseSub;
 
   // ─── Live graph history ───────────────────────────────────────────────────
@@ -74,6 +76,11 @@ class AppProvider extends ChangeNotifier {
   // ─── Pressure Therapy ─────────────────────────────────────────────────────
   bool _isPressureTherapyActive = false;
   int _pressureTherapyCycle = 0;
+
+  // ─── Exercise Mode ──────────────────────────────────────────────────────────
+  bool _isExerciseMode = false;
+  String? _exerciseAlert;          // null = no alert
+  DateTime? _exerciseAlertTime;    // when alert was triggered
 
   // ─── User profile ─────────────────────────────────────────────────────────
   String userName = 'Dr. Sarah Chen';
@@ -103,6 +110,7 @@ class AppProvider extends ChangeNotifier {
   bool get isCloudOverride => _cloudOverrideEnabled;
   bool get isCloudConnected => _isCloudConnected;
   bool get esp32Online => _esp32Online;
+  bool get hasFirebaseRealData => _hasFirebaseRealData;
 
   // Fall Detection
   bool get isFallDetected => _isFallDetected;
@@ -112,17 +120,27 @@ class AppProvider extends ChangeNotifier {
   bool get isPressureTherapyActive => _isPressureTherapyActive;
   int get pressureTherapyCycle => _pressureTherapyCycle;
 
+  // Exercise Mode
+  bool get isExerciseMode => _isExerciseMode;
+  String? get exerciseAlert => _exerciseAlert;
+  DateTime? get exerciseAlertTime => _exerciseAlertTime;
+
   String get dataSourceLabel {
-    // Never expose demo/manipulation mode to the home UI.
-    if (_esp32Online) return 'LIVE DATA';
-    if (_isCloudConnected) return 'LIVE DATA';
-    return 'SIMULATED';
+    // Show the active override clearly: live real_data continues updating in
+    // Firebase, but an enabled admin override is what the app displays.
+    if (_cloudOverrideEnabled || _localOverrideEnabled) return 'DEMO OVERRIDE';
+    if (_esp32Online) return 'ESP32 LIVE';
+    if (_hasFirebaseRealData) return 'FIREBASE NODE';
+    if (_isCloudConnected) return 'WAITING FOR DATA';
+    return 'FIREBASE OFFLINE';
   }
 
   Color get dataSourceColor {
-    // Mirror label logic — never show orange demo colour on home.
-    if (_esp32Online) return const Color(0xFF00FF88);
-    if (_isCloudConnected) return const Color(0xFF00FF88);
+    if (_cloudOverrideEnabled || _localOverrideEnabled) {
+      return const Color(0xFFFF9800);
+    }
+    if (_esp32Online || _hasFirebaseRealData) return const Color(0xFF00FF88);
+    if (_isCloudConnected) return const Color(0xFFFF9800);
     return const Color(0xFF7A8499);
   }
 
@@ -131,6 +149,7 @@ class AppProvider extends ChangeNotifier {
   double get bodyTemp => _bodyTemp;
   double get stressIndex => _stressIndex;
   double get spo2 => _spo2;
+  bool get hasSpo2Reading => _hasSpo2Reading;
   bool get fallFromEsp32 => _fallFromEsp32;
 
   // ── MPU6050 live values (shown to user) ───────────────────────────────────
@@ -190,14 +209,16 @@ class AppProvider extends ChangeNotifier {
   void _startSimulation() {
     _simulationTimer = Timer.periodic(const Duration(milliseconds: 800), (_) {
       final rand = Random();
-      if (!isDemoMode) {
+      if (!isDemoMode && !_hasFirebaseRealData) {
         _heartRate = (_heartRate + (rand.nextDouble() * 4 - 2)).clamp(55, 110);
         _gsr = (_gsr + (rand.nextDouble() * 0.4 - 0.2)).clamp(1.0, 10.0);
         _bodyTemp =
             (_bodyTemp + (rand.nextDouble() * 0.1 - 0.05)).clamp(35.5, 38.5);
         _stressIndex =
             (_stressIndex + (rand.nextDouble() * 3 - 1.5)).clamp(10, 85);
-      } else {
+      } else if (_localOverrideEnabled && !_cloudOverrideEnabled) {
+        // Only add preview jitter to an offline/local demo. Values received
+        // from Firebase must remain identical to the stored readings.
         _heartRate = _demoHeartRate + (rand.nextDouble() * 4 - 2);
         _gsr = _demoGsr + (rand.nextDouble() * 0.2 - 0.1);
         _bodyTemp = _demoBodyTemp + (rand.nextDouble() * 0.05 - 0.025);
@@ -215,9 +236,13 @@ class AppProvider extends ChangeNotifier {
       // Only trigger emergency popup when admin manipulation is active (isDemoMode)
       // AND stress is above 90. This prevents random simulation drift from
       // firing false alerts during normal use.
-      if (isDemoMode && _stressIndex > 90 && !_fallAlertHandled) {
+      if (isDemoMode && !_isExerciseMode && _stressIndex > 90 && !_fallAlertHandled) {
         _triggerFallDetection();
       }
+
+      // Vital safety alerts remain active in both normal and exercise mode.
+      // Stress-index/GSR alerts are intentionally not part of this check.
+      _checkVitalAlerts();
 
       notifyListeners();
     });
@@ -228,6 +253,7 @@ class AppProvider extends ChangeNotifier {
       (snapshot) {
         _isCloudConnected = true;
         _esp32Online = snapshot.esp32Online;
+        _hasFirebaseRealData = snapshot.hasRealData;
         _cloudOverrideEnabled = snapshot.overrideEnabled;
 
         if (snapshot.overrideEnabled) {
@@ -240,6 +266,7 @@ class AppProvider extends ChangeNotifier {
           _gsr = snapshot.gsr;
           _bodyTemp = snapshot.temperature;
           _stressIndex = snapshot.stressIndex;
+          _fallFromEsp32 = snapshot.fall;
           // MPU6050 override → update both demo (slider) and live (display) values
           _demoMpuRoll = snapshot.roll;
           _demoMpuPitch = snapshot.pitch;
@@ -257,12 +284,11 @@ class AppProvider extends ChangeNotifier {
           _mpuRotationalX = snapshot.rotationalX;
           _mpuRotationalY = snapshot.rotationalY;
           _mpuRotationalZ = snapshot.rotationalZ;
-        } else if (snapshot.esp32Online) {
+        } else if (snapshot.hasRealData) {
           _heartRate = snapshot.heartRate;
           _gsr = snapshot.gsr;
           _bodyTemp = snapshot.temperature;
           _stressIndex = snapshot.stressIndex;
-          _spo2 = snapshot.spo2; // ✅ read SpO2
           _fallFromEsp32 = snapshot.fall; // ✅ read fall
           _localOverrideEnabled = false;
           // MPU6050 real values from ESP32
@@ -275,6 +301,11 @@ class AppProvider extends ChangeNotifier {
           _mpuRotationalY = snapshot.rotationalY;
           _mpuRotationalZ = snapshot.rotationalZ;
         }
+        _hasSpo2Reading = snapshot.hasSpo2;
+        if (snapshot.hasSpo2) _spo2 = snapshot.spo2;
+        // Firebase updates can arrive independently of the simulation timer.
+        // Evaluate them immediately so remote/admin readings alert on every device.
+        _checkVitalAlerts();
         notifyListeners();
       },
       onError: (e) {
@@ -340,6 +371,60 @@ class AppProvider extends ChangeNotifier {
   }
 
   // ═══════════════════════════════════════════════════════════════════════════
+  // EXERCISE MODE
+  // ═══════════════════════════════════════════════════════════════════════════
+
+  /// A heart rate above 100 BPM is outside the normal adult resting range.
+  /// Keep the same visible safety threshold during exercise so elevated
+  /// readings (including admin demo overrides) are never silently ignored.
+  static const double _exerciseHrMax = 100;
+  static const double _exerciseHrMin = 40;
+  static const double _exerciseTempMax = 39.0;
+  static const double _exerciseSpo2Min = 90;
+
+  void toggleExerciseMode(bool enabled) {
+    _isExerciseMode = enabled;
+    if (!enabled) {
+      _exerciseAlert = null;
+      _exerciseAlertTime = null;
+    } else {
+      // Evaluate the current reading immediately; do not wait for the next
+      // simulation/Firebase tick after enabling exercise mode.
+      _checkVitalAlerts();
+    }
+    _savePrefs();
+    notifyListeners();
+  }
+
+  void dismissExerciseAlert() {
+    _exerciseAlert = null;
+    _exerciseAlertTime = null;
+    notifyListeners();
+  }
+
+  void _checkVitalAlerts() {
+    String? alert;
+
+    if (_heartRate > _exerciseHrMax) {
+      alert = '⚠️ Heart rate above normal range: ${_heartRate.toStringAsFixed(0)} BPM — slow down and monitor your reading.';
+    } else if (_heartRate < _exerciseHrMin) {
+      alert = '⚠️ Heart rate dangerously low: ${_heartRate.toStringAsFixed(0)} BPM — stop and rest!';
+    } else if (_bodyTemp > _exerciseTempMax) {
+      alert = '🌡️ Body temperature too high: ${_bodyTemp.toStringAsFixed(1)}°C — risk of heat stroke!';
+    } else if (_spo2 < _exerciseSpo2Min) {
+      alert = '🫁 SpO2 critically low: ${_spo2.toStringAsFixed(0)}% — stop exercising!';
+    }
+
+    if (alert != null && alert != _exerciseAlert) {
+      _exerciseAlert = alert;
+      _exerciseAlertTime = DateTime.now();
+    } else if (alert == null) {
+      _exerciseAlert = null;
+      _exerciseAlertTime = null;
+    }
+  }
+
+  // ═══════════════════════════════════════════════════════════════════════════
   // PRESSURE THERAPY
   // ═══════════════════════════════════════════════════════════════════════════
 
@@ -383,6 +468,7 @@ class AppProvider extends ChangeNotifier {
       if (gsr != null) _gsr = gsr;
       if (bodyTemp != null) _bodyTemp = bodyTemp;
       if (stressIndex != null) _stressIndex = stressIndex;
+      _checkVitalAlerts();
       FirebaseService.instance.pushRealSensorData(
         heartRate: _heartRate,
         gsr: _gsr,
@@ -401,6 +487,13 @@ class AppProvider extends ChangeNotifier {
     _localOverrideEnabled = enabled;
     _cloudOverrideEnabled = enabled;
     if (!enabled) _demoScenario = 'Calm';
+    if (enabled) {
+      _heartRate = _demoHeartRate;
+      _gsr = _demoGsr;
+      _bodyTemp = _demoBodyTemp;
+      _stressIndex = _demoStressIndex;
+    }
+    _checkVitalAlerts();
     notifyListeners();
     await FirebaseService.instance.setOverrideEnabled(enabled);
   }
@@ -450,6 +543,11 @@ class AppProvider extends ChangeNotifier {
     _demoGsr = gsr;
     _demoBodyTemp = temp;
     _localOverrideEnabled = true;
+    _heartRate = hr;
+    _gsr = gsr;
+    _bodyTemp = temp;
+    _stressIndex = stress;
+    _checkVitalAlerts();
     notifyListeners();
     await FirebaseService.instance.pushOverrideScenario(
       heartRate: hr,
@@ -462,24 +560,36 @@ class AppProvider extends ChangeNotifier {
 
   Future<void> setDemoHeartRate(double v) async {
     _demoHeartRate = v;
+    _localOverrideEnabled = true;
+    // Reflect the admin value locally at once, then Firebase propagates it to
+    // other clients through the shared override stream.
+    _heartRate = v;
+    _checkVitalAlerts();
     notifyListeners();
     await FirebaseService.instance.updateOverrideField('heart_rate', v);
   }
 
   Future<void> setDemoGsr(double v) async {
     _demoGsr = v;
+    _localOverrideEnabled = true;
+    _gsr = v;
     notifyListeners();
     await FirebaseService.instance.updateOverrideField('gsr', v);
   }
 
   Future<void> setDemoBodyTemp(double v) async {
     _demoBodyTemp = v;
+    _localOverrideEnabled = true;
+    _bodyTemp = v;
+    _checkVitalAlerts();
     notifyListeners();
     await FirebaseService.instance.updateOverrideField('temperature', v);
   }
 
   Future<void> setDemoStressIndex(double v) async {
     _demoStressIndex = v;
+    _localOverrideEnabled = true;
+    _stressIndex = v;
     notifyListeners();
     await FirebaseService.instance.updateOverrideField('stress_index', v);
     // Fire haptic motor (D19) on ESP32 to reflect the manipulated stress value
@@ -546,6 +656,7 @@ class AppProvider extends ChangeNotifier {
     userRole = prefs.getString('userRole') ?? userRole;
     userAge = prefs.getString('userAge') ?? '';
     userPhone = prefs.getString('userPhone') ?? '';
+    _isExerciseMode = prefs.getBool('exerciseMode') ?? false;
     emergencyContact1 = prefs.getString('ec1') ?? '';
     emergencyContact2 = prefs.getString('ec2') ?? '';
     notifyListeners();
@@ -557,6 +668,7 @@ class AppProvider extends ChangeNotifier {
     await prefs.setString('userRole', userRole);
     await prefs.setString('userAge', userAge);
     await prefs.setString('userPhone', userPhone);
+    await prefs.setBool('exerciseMode', _isExerciseMode);
     await prefs.setString('ec1', emergencyContact1);
     await prefs.setString('ec2', emergencyContact2);
   }

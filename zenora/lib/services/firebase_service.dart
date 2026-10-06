@@ -16,6 +16,8 @@ class DeviceSnapshot {
   final bool fall;
   final bool overrideEnabled;
   final bool esp32Online;
+  final bool hasRealData;
+  final bool hasSpo2;
   final String scenario;
 
   // ── MPU6050 fall detection fields ─────────────────────────────────────────
@@ -37,6 +39,8 @@ class DeviceSnapshot {
     required this.fall,
     required this.overrideEnabled,
     required this.esp32Online,
+    this.hasRealData = false,
+    this.hasSpo2 = false,
     this.scenario = 'Calm',
     // MPU6050 defaults → upright, stationary
     this.roll = 0.0,
@@ -59,6 +63,8 @@ class DeviceSnapshot {
         fall: false,
         overrideEnabled: false,
         esp32Online: false,
+        hasRealData: false,
+        hasSpo2: false,
       );
 }
 
@@ -73,6 +79,7 @@ class FirebaseService {
   // ── Database references ───────────────────────────────────────────────────
   late final DatabaseReference _rootRef;
   late final DatabaseReference _realDataRef;
+  late final DatabaseReference _rootRealDataRef;
   late final DatabaseReference _overrideRef;
   late final DatabaseReference _connectionRef;
 
@@ -84,11 +91,15 @@ class FirebaseService {
 
   // ── Internal subscriptions ────────────────────────────────────────────────
   StreamSubscription? _realDataSub;
+  StreamSubscription? _rootRealDataSub;
   StreamSubscription? _overrideSub;
+  StreamSubscription? _connectionSub;
 
   // ── Last known values ─────────────────────────────────────────────────────
   Map<String, dynamic> _latestReal = {};
+  Map<String, dynamic> _latestRootReal = {};
   Map<String, dynamic> _latestOverride = {};
+  Map<String, dynamic> _latestConnection = {};
 
   // ─────────────────────────────────────────────────────────────────────────
   /// Call once from main() AFTER Firebase.initializeApp()
@@ -99,6 +110,7 @@ class FirebaseService {
 
     _rootRef = FirebaseDatabase.instance.ref(_deviceId);
     _realDataRef = _rootRef.child('real_data');
+    _rootRealDataRef = FirebaseDatabase.instance.ref('real_data');
     _overrideRef = _rootRef.child('override');
     _connectionRef = _rootRef.child('connection');
 
@@ -106,11 +118,22 @@ class FirebaseService {
 
     _realDataSub = _realDataRef.onValue.listen((event) {
       if (event.snapshot.exists && event.snapshot.value != null) {
-        _latestReal = Map<String, dynamic>.from(event.snapshot.value as Map);
+        _latestReal = _mapValue(event.snapshot.value);
       }
       _emit();
     }, onError: (e) {
-      debugPrint('[Firebase] real_data listen error: $e');
+      debugPrint('[Firebase] /$_deviceId/real_data listen error: $e');
+    });
+
+    // Support firmware/projects that write directly to /real_data instead of
+    // nesting readings beneath /device_1/real_data.
+    _rootRealDataSub = _rootRealDataRef.onValue.listen((event) {
+      if (event.snapshot.exists && event.snapshot.value != null) {
+        _latestRootReal = _mapValue(event.snapshot.value);
+      }
+      _emit();
+    }, onError: (e) {
+      debugPrint('[Firebase] /real_data listen error: $e');
     });
 
     _overrideSub = _overrideRef.onValue.listen((event) {
@@ -122,6 +145,16 @@ class FirebaseService {
     }, onError: (e) {
       debugPrint('[Firebase] override listen error: $e');
     });
+
+    _connectionSub = _connectionRef.onValue.listen((event) {
+      if (event.snapshot.exists && event.snapshot.value != null) {
+        _latestConnection =
+            Map<String, dynamic>.from(event.snapshot.value as Map);
+      }
+      _emit();
+    }, onError: (e) {
+      debugPrint('[Firebase] connection listen error: $e');
+    });
   }
 
   // ─────────────────────────────────────────────────────────────────────────
@@ -130,7 +163,13 @@ class FirebaseService {
   void _emit() {
     try {
       final overrideEnabled = (_latestOverride['enabled'] as bool?) ?? false;
-      final esp32Online = (_latestReal['esp32_online'] as bool?) ?? false;
+      final realData = _selectedRealData();
+      final esp32Online =
+          (_latestConnection['esp32_online'] as bool?) == true ||
+              (realData['esp32_online'] as bool?) == true;
+      // Physical sensor readings take precedence while the ESP32 is online.
+      // A stale cloud demo override must not mask live sensor data.
+      final usingOverride = overrideEnabled && !esp32Online;
 
       double heartRate, spo2, gsr, temperature, stressIndex;
       bool fall;
@@ -138,7 +177,7 @@ class FirebaseService {
       double roll, pitch, linearX, linearY, linearZ;
       double rotationalX, rotationalY, rotationalZ;
 
-      if (overrideEnabled) {
+      if (usingOverride) {
         heartRate = _toDouble(_latestOverride['heart_rate'], 72.0);
         spo2 = _toDouble(_latestOverride['spo2'], 98.0);
         gsr = _toDouble(_latestOverride['gsr'], 4.2);
@@ -156,22 +195,22 @@ class FirebaseService {
         rotationalY = _toDouble(_latestOverride['mpu_rot_y'], 0.0);
         rotationalZ = _toDouble(_latestOverride['mpu_rot_z'], 0.0);
       } else {
-        heartRate = _toDouble(_latestReal['heart_rate'], 72.0);
-        spo2 = _toDouble(_latestReal['spo2'], 98.0);
-        gsr = _toDouble(_latestReal['gsr'], 4.2);
-        temperature = _toDouble(_latestReal['temperature'], 36.6);
-        stressIndex = _toDouble(_latestReal['stress_index'], 34.0);
-        fall = (_latestReal['fall'] as bool?) ?? false;
+        heartRate = _toDoubleField(realData, const ['heart_rate', 'heartRate', 'hr'], 72.0);
+        spo2 = _toDoubleField(realData, const ['spo2', 'SpO2', 'oxygen_saturation'], 98.0);
+        gsr = _toDoubleField(realData, const ['gsr', 'GSR'], 4.2);
+        temperature = _toDoubleField(realData, const ['temperature', 'body_temp', 'bodyTemp', 'temp'], 36.6);
+        stressIndex = _toDoubleField(realData, const ['stress_index', 'stressIndex', 'stress'], 34.0);
+        fall = (realData['fall'] as bool?) ?? false;
         scenario = 'Live';
         // MPU real values (from ESP32 if present, otherwise defaults)
-        roll = _toDouble(_latestReal['mpu_roll'], 0.0);
-        pitch = _toDouble(_latestReal['mpu_pitch'], 0.0);
-        linearX = _toDouble(_latestReal['mpu_linear_x'], 0.0);
-        linearY = _toDouble(_latestReal['mpu_linear_y'], 0.0);
-        linearZ = _toDouble(_latestReal['mpu_linear_z'], 9.81);
-        rotationalX = _toDouble(_latestReal['mpu_rot_x'], 0.0);
-        rotationalY = _toDouble(_latestReal['mpu_rot_y'], 0.0);
-        rotationalZ = _toDouble(_latestReal['mpu_rot_z'], 0.0);
+        roll = _toDoubleField(realData, const ['mpu_roll', 'roll'], 0.0);
+        pitch = _toDoubleField(realData, const ['mpu_pitch', 'pitch'], 0.0);
+        linearX = _toDoubleField(realData, const ['mpu_linear_x', 'linearX'], 0.0);
+        linearY = _toDoubleField(realData, const ['mpu_linear_y', 'linearY'], 0.0);
+        linearZ = _toDoubleField(realData, const ['mpu_linear_z', 'linearZ'], 9.81);
+        rotationalX = _toDoubleField(realData, const ['mpu_rot_x', 'rotationalX'], 0.0);
+        rotationalY = _toDoubleField(realData, const ['mpu_rot_y', 'rotationalY'], 0.0);
+        rotationalZ = _toDoubleField(realData, const ['mpu_rot_z', 'rotationalZ'], 0.0);
       }
 
       _snapshotController.add(DeviceSnapshot(
@@ -181,8 +220,12 @@ class FirebaseService {
         temperature: temperature,
         stressIndex: stressIndex,
         fall: fall,
-        overrideEnabled: overrideEnabled,
+        overrideEnabled: usingOverride,
         esp32Online: esp32Online,
+        hasRealData: _hasSensorValues(realData),
+        hasSpo2: !usingOverride &&
+            _hasSpo2Value(realData) &&
+            (esp32Online || _isFreshSensorData(realData)),
         scenario: scenario,
         roll: roll,
         pitch: pitch,
@@ -304,6 +347,7 @@ class FirebaseService {
         'stress_index': stressIndex,
         'fall': fall,
         'esp32_online': true,
+        'is_seed': false,
         'mpu_roll': roll,
         'mpu_pitch': pitch,
         'mpu_linear_x': linearX,
@@ -343,6 +387,7 @@ class FirebaseService {
           'stress_index': 34.0,
           'fall': false,
           'esp32_online': false,
+          'is_seed': true,
           'mpu_roll': 0.0,
           'mpu_pitch': 0.0,
           'mpu_linear_x': 0.0,
@@ -351,7 +396,9 @@ class FirebaseService {
           'mpu_rot_x': 0.0,
           'mpu_rot_y': 0.0,
           'mpu_rot_z': 0.0,
-          'updated_at': ServerValue.timestamp,
+          // Defaults are placeholders, not sensor readings. Do not make them
+          // look fresh to consumers waiting for real sensor values.
+          'updated_at': 0,
         });
       }
 
@@ -389,9 +436,62 @@ class FirebaseService {
     return fallback;
   }
 
+  Map<String, dynamic> _mapValue(dynamic value) =>
+      Map<String, dynamic>.from(value as Map);
+
+  Map<String, dynamic> _selectedRealData() {
+    final deviceHasSensors = _hasSensorValues(_latestReal);
+    final rootHasSensors = _hasSensorValues(_latestRootReal);
+    if (rootHasSensors && !deviceHasSensors) return _latestRootReal;
+    if (deviceHasSensors && rootHasSensors) {
+      if (_latestRootReal['esp32_online'] == true) return _latestRootReal;
+      if (_latestReal['esp32_online'] == true) return _latestReal;
+      if (_updatedAt(_latestRootReal) > _updatedAt(_latestReal)) {
+        return _latestRootReal;
+      }
+    }
+    if (!deviceHasSensors && !rootHasSensors && _latestReal.isEmpty) {
+      return _latestRootReal;
+    }
+    return _latestReal;
+  }
+
+  int _updatedAt(Map<String, dynamic> data) =>
+      _toDouble(data['updated_at'] ?? data['updatedAt'], 0).toInt();
+
+  bool _isFreshSensorData(Map<String, dynamic> data) {
+    final timestamp = _updatedAt(data);
+    if (timestamp <= 0) return false;
+    final timestampMs = timestamp < 1000000000000
+        ? timestamp * 1000
+        : timestamp;
+    final age = DateTime.now().millisecondsSinceEpoch - timestampMs;
+    return age >= 0 && age <= const Duration(seconds: 30).inMilliseconds;
+  }
+
+  bool _hasSensorValues(Map<String, dynamic> data) =>
+      const ['heart_rate', 'heartRate', 'hr', 'gsr', 'temperature', 'body_temp', 'bodyTemp', 'temp', 'spo2', 'SpO2', 'oxygen_saturation']
+          .any(data.containsKey);
+
+  bool _hasSpo2Value(Map<String, dynamic> data) =>
+      const ['spo2', 'SpO2', 'oxygen_saturation'].any(data.containsKey);
+
+  double _toDoubleField(
+    Map<String, dynamic> data,
+    List<String> keys,
+    double fallback,
+  ) {
+    for (final key in keys) {
+      if (data.containsKey(key)) return _toDouble(data[key], fallback);
+    }
+    return fallback;
+  }
+
   void dispose() {
     _realDataSub?.cancel();
+    _rootRealDataSub?.cancel();
     _overrideSub?.cancel();
+    _connectionSub?.cancel();
     _snapshotController.close();
   }
 }

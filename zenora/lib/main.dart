@@ -1,45 +1,39 @@
-// ════════════════════════════════════════════════════════════════════════════
-// lib/main.dart  [EXTENDED — v3: Chat tab added]
-//
-// CHANGES FROM V2:
-//   • ChatScreen added as 6th tab (index 5)
-//   • Nav item: Icons.smart_toy / 'AI Chat'
-// ════════════════════════════════════════════════════════════════════════════
-
+import 'package:firebase_core/firebase_core.dart';
 import 'package:flutter/material.dart';
 import 'package:flutter/services.dart';
 import 'package:provider/provider.dart';
-import 'package:firebase_core/firebase_core.dart';
+
 import 'firebase_options.dart';
 import 'providers/app_provider.dart';
-import 'services/firebase_service.dart';
-import 'theme/app_theme.dart';
+import 'screens/chat_screen.dart';
+import 'screens/exercises_screen.dart';
 import 'screens/home_screen.dart';
 import 'screens/monitor_screen.dart';
-import 'screens/exercises_screen.dart';
-import 'screens/stats_screen.dart';
 import 'screens/profile_screen.dart';
-import 'screens/chat_screen.dart'; // NEW
+import 'screens/stats_screen.dart';
+import 'services/firebase_service.dart';
+import 'theme/app_theme.dart';
 
-void main() async {
+Future<void> main() async {
   WidgetsFlutterBinding.ensureInitialized();
 
-  SystemChrome.setPreferredOrientations([DeviceOrientation.portraitUp]);
-  SystemChrome.setSystemUIOverlayStyle(const SystemUiOverlayStyle(
-    statusBarColor: Colors.transparent,
-    statusBarIconBrightness: Brightness.light,
-    systemNavigationBarColor: AppTheme.cardBg,
-    systemNavigationBarIconBrightness: Brightness.light,
-  ));
+  await SystemChrome.setPreferredOrientations([DeviceOrientation.portraitUp]);
+  SystemChrome.setSystemUIOverlayStyle(
+    const SystemUiOverlayStyle(
+      statusBarColor: Colors.transparent,
+      statusBarIconBrightness: Brightness.light,
+      systemNavigationBarColor: AppTheme.cardBg,
+      systemNavigationBarIconBrightness: Brightness.light,
+    ),
+  );
 
   try {
     await Firebase.initializeApp(
       options: DefaultFirebaseOptions.currentPlatform,
     );
     FirebaseService.instance.init();
-    debugPrint('[Main] Firebase initialized successfully');
-  } catch (e) {
-    debugPrint('[Main] Firebase init failed (local mode): $e');
+  } catch (error) {
+    debugPrint('Firebase initialization failed: $error');
   }
 
   runApp(
@@ -64,6 +58,18 @@ class ZenoraApp extends StatelessWidget {
   }
 }
 
+class MyApp extends StatelessWidget {
+  const MyApp({super.key});
+
+  @override
+  Widget build(BuildContext context) {
+    return ChangeNotifierProvider(
+      create: (_) => AppProvider(),
+      child: const ZenoraApp(),
+    );
+  }
+}
+
 class MainShell extends StatefulWidget {
   const MainShell({super.key});
 
@@ -72,18 +78,16 @@ class MainShell extends StatefulWidget {
 }
 
 class _MainShellState extends State<MainShell> {
-  int _currentIndex = 0;
-
-  final _screens = const [
+  static const List<Widget> _screens = [
     HomeScreen(),
     MonitorScreen(),
     ExercisesScreen(),
     StatsScreen(),
     ProfileScreen(),
-    ChatScreen(), // NEW
+    ChatScreen(),
   ];
 
-  final _navItems = const [
+  static const List<BottomNavigationBarItem> _navItems = [
     BottomNavigationBarItem(
       icon: Icon(Icons.home_outlined),
       activeIcon: Icon(Icons.home),
@@ -110,12 +114,13 @@ class _MainShellState extends State<MainShell> {
       label: 'Profile',
     ),
     BottomNavigationBarItem(
-      // NEW
       icon: Icon(Icons.smart_toy_outlined),
       activeIcon: Icon(Icons.smart_toy),
       label: 'AI Chat',
     ),
   ];
+
+  int _currentIndex = 0;
 
   @override
   Widget build(BuildContext context) {
@@ -134,23 +139,23 @@ class _MainShellState extends State<MainShell> {
               ),
               boxShadow: [
                 BoxShadow(
-                  color: Colors.black.withOpacity(0.3),
+                  color: Colors.black.withValues(alpha: 0.3),
                   blurRadius: 20,
                 ),
               ],
             ),
             child: SafeArea(
               child: SizedBox(
-                height: 60,
+                height: 72,
                 child: Row(
                   mainAxisAlignment: MainAxisAlignment.spaceAround,
                   children: List.generate(
                     _navItems.length,
-                    (i) => _NavItem(
-                      item: _navItems[i],
-                      isActive: _currentIndex == i,
-                      onTap: () => setState(() => _currentIndex = i),
-                      showBadge: i == 4 && provider.isDemoMode,
+                    (index) => _NavItem(
+                      item: _navItems[index],
+                      isActive: _currentIndex == index,
+                      onTap: () => setState(() => _currentIndex = index),
+                      showBadge: index == 4 && provider.isDemoMode,
                     ),
                   ),
                 ),
@@ -178,7 +183,7 @@ class _NavItem extends StatelessWidget {
 
   @override
   Widget build(BuildContext context) {
-    final color = isActive ? AppTheme.accentCyan : AppTheme.textSecondary;
+    final textColor = isActive ? AppTheme.accentCyan : AppTheme.textSecondary;
 
     return GestureDetector(
       onTap: onTap,
@@ -197,7 +202,7 @@ class _NavItem extends StatelessWidget {
                       ? Container(
                           padding: const EdgeInsets.all(6),
                           decoration: BoxDecoration(
-                            color: AppTheme.accentCyan.withOpacity(0.12),
+                            color: AppTheme.accentCyan.withValues(alpha: 0.12),
                             borderRadius: BorderRadius.circular(10),
                           ),
                           child: item.activeIcon,
@@ -226,7 +231,7 @@ class _NavItem extends StatelessWidget {
             Text(
               item.label!,
               style: TextStyle(
-                color: color,
+                color: textColor,
                 fontSize: 9,
                 fontWeight: isActive ? FontWeight.w600 : FontWeight.normal,
               ),

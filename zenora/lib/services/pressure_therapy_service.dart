@@ -28,13 +28,15 @@ class PressureTherapyService {
   static String esp32Ip =
       '10.59.180.90'; // ✅ UPDATE to your ESP32 IP from Serial Monitor
   static String get _baseUrl => 'http://$esp32Ip';
-  static bool hardwareConnected = true; // ✅ set true to send commands to ESP32
+  static bool hardwareConnected = false;
 
   // ── State ──────────────────────────────────────────────────────────────────
   bool _isRunning = false;
   int _currentCycle = 0;
+  int _sessionGeneration = 0;
   TherapyPhase _phase = TherapyPhase.idle;
   Timer? _cycleTimer;
+  Future<void> _hardwareCommandQueue = Future<void>.value();
 
   // 11-step intensity curve: ramp up → peak → ramp down
   // Maps to 0–255 for ESP32 PWM and vibration amplitude
@@ -93,19 +95,31 @@ class PressureTherapyService {
     VoidCallback? onComplete,
   }) async {
     if (_isRunning) return;
+    final session = ++_sessionGeneration;
     _isRunning = true;
     _currentCycle = 0;
     onCycleUpdate = onUpdate;
     onSessionComplete = onComplete;
 
-    await _sendHardwareCommand('start', intensity: intensityCurve[0]);
-    // Notify haptic motor on D19 that therapy is starting
-    await _sendHapticCommand('start',
-        intensity: intensityCurve[0], duration: 900);
-    _runNextCycle();
+    final connected = await checkHardwareConnection();
+    if (!_isCurrentSession(session)) return;
+    if (connected) {
+      await _sendHardwareCommand('start', intensity: intensityCurve[0]);
+      if (!_isCurrentSession(session)) return;
+      await _sendHapticCommand('start',
+          intensity: intensityCurve[0], duration: 900);
+      if (!_isCurrentSession(session)) return;
+    } else {
+      debugPrint(
+          '[PressureTherapy] ESP32 unavailable at $_baseUrl; continuing phone-only');
+    }
+    _runNextCycle(session);
   }
 
   void stop() {
+    // Invalidate pending start/cycle continuations before enqueueing stop.
+    // This prevents a delayed HTTP response from restarting therapy afterward.
+    _sessionGeneration++;
     _isRunning = false;
     _currentCycle = 0;
     _phase = TherapyPhase.idle;
@@ -118,8 +132,12 @@ class PressureTherapyService {
 
   // ── Internal cycle runner ─────────────────────────────────────────────────
 
-  void _runNextCycle() {
-    if (!_isRunning || _currentCycle >= intensityCurve.length) {
+  bool _isCurrentSession(int session) =>
+      _isRunning && session == _sessionGeneration;
+
+  void _runNextCycle(int session) {
+    if (!_isCurrentSession(session)) return;
+    if (_currentCycle >= intensityCurve.length) {
       stop();
       onSessionComplete?.call();
       return;
@@ -141,8 +159,9 @@ class PressureTherapyService {
 
     // Each cycle is 1 second vibration + 400ms pause
     _cycleTimer = Timer(const Duration(milliseconds: 1400), () {
+      if (!_isCurrentSession(session)) return;
       _currentCycle++;
-      _runNextCycle();
+      _runNextCycle(session);
     });
   }
 
@@ -169,7 +188,13 @@ class PressureTherapyService {
   //
   // ESP32 response: { "status": "ok" }
 
-  Future<bool> _sendHardwareCommand(String command, {int intensity = 0}) async {
+  Future<bool> _sendHardwareCommand(String command, {int intensity = 0}) =>
+      _enqueueHardwareCommand(
+        () => _sendHardwareCommandNow(command, intensity: intensity),
+      );
+
+  Future<bool> _sendHardwareCommandNow(String command,
+      {int intensity = 0}) async {
     if (!hardwareConnected) {
       debugPrint('[PressureTherapy] Hardware not connected — phone only mode');
       return false;
@@ -181,7 +206,7 @@ class PressureTherapyService {
             headers: {'Content-Type': 'application/json'},
             body: jsonEncode({'command': command, 'intensity': intensity}),
           )
-          .timeout(const Duration(milliseconds: 500));
+          .timeout(const Duration(milliseconds: 1000));
 
       final ok = response.statusCode == 200;
       debugPrint(
@@ -198,7 +223,7 @@ class PressureTherapyService {
     try {
       final response = await http
           .get(Uri.parse('$_baseUrl/ping'))
-          .timeout(const Duration(seconds: 2));
+          .timeout(const Duration(milliseconds: 800));
       hardwareConnected = response.statusCode == 200;
       debugPrint(
           '[PressureTherapy] Hardware ${hardwareConnected ? "ONLINE" : "OFFLINE"}');
@@ -218,6 +243,13 @@ class PressureTherapyService {
   // ESP32: drives PWM on GPIO 19 (D19) for the haptic motor.
 
   Future<bool> _sendHapticCommand(String command,
+          {int intensity = 0, int duration = 900}) =>
+      _enqueueHardwareCommand(
+        () => _sendHapticCommandNow(command,
+            intensity: intensity, duration: duration),
+      );
+
+  Future<bool> _sendHapticCommandNow(String command,
       {int intensity = 0, int duration = 900}) async {
     if (!hardwareConnected) return false;
     try {
@@ -231,7 +263,7 @@ class PressureTherapyService {
               'duration': duration
             }),
           )
-          .timeout(const Duration(milliseconds: 500));
+          .timeout(const Duration(milliseconds: 1000));
 
       final ok = response.statusCode == 200;
       debugPrint(
@@ -256,6 +288,18 @@ class PressureTherapyService {
     debugPrint(
         '[HapticMotor D19] Admin stress override → pulse amplitude=$amplitude duration=${duration}ms');
     await _sendHapticCommand('pulse', intensity: amplitude, duration: duration);
+  }
+
+  Future<bool> _enqueueHardwareCommand(Future<bool> Function() send) {
+    final result = Completer<bool>();
+    _hardwareCommandQueue = _hardwareCommandQueue.then((_) async {
+      try {
+        result.complete(await send());
+      } catch (error, stackTrace) {
+        result.completeError(error, stackTrace);
+      }
+    });
+    return result.future;
   }
 
   void dispose() => stop();

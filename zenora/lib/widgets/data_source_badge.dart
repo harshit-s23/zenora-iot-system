@@ -149,14 +149,19 @@ class _DataSourceBadgeState extends State<DataSourceBadge>
   }
 
   String _subLabel(AppProvider p) {
-    if (p.esp32Online) return 'ESP32 connected';
-    if (p.isCloudConnected) return 'Firebase connected';
+    if (p.isDemoMode) return 'Showing admin override values';
+    if (p.esp32Online) return 'ESP32 connected • device_1/real_data';
+    if (p.hasFirebaseRealData) return 'device_1/real_data';
+    if (p.isCloudConnected) return 'Connected • waiting for real_data';
     return 'Local simulation';
   }
 
   IconData _icon(AppProvider p) {
+    if (p.isDemoMode) return Icons.science_outlined;
     if (p.esp32Online) return Icons.sensors;
-    if (p.isCloudConnected) return Icons.cloud_outlined;
+    if (p.hasFirebaseRealData || p.isCloudConnected) {
+      return Icons.cloud_outlined;
+    }
     return Icons.computer_outlined;
   }
 }
@@ -167,9 +172,6 @@ class DemoModeBanner extends StatelessWidget {
 
   @override
   Widget build(BuildContext context) {
-    // Never show the demo mode banner on home screen.
-    // Manipulation data still flows through — only the banner is hidden.
-    return const SizedBox.shrink();
     return Consumer<AppProvider>(
       builder: (_, provider, __) {
         if (!provider.isDemoMode) return const SizedBox.shrink();

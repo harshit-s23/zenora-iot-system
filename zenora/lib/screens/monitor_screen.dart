@@ -27,7 +27,7 @@ class _MonitorScreenState extends State<MonitorScreen> {
             child: CustomScrollView(
               slivers: [
                 // ── App Bar ──────────────────────────────────────────────
-                SliverToBoxAdapter(child: _buildAppBar()),
+                SliverToBoxAdapter(child: _buildAppBar(provider)),
 
                 // ── Demo Mode Banner (visible when override active) ────────
                 const SliverToBoxAdapter(child: DemoModeBanner()),
@@ -53,13 +53,31 @@ class _MonitorScreenState extends State<MonitorScreen> {
                           AppTheme.accentCyan,
                           Icons.bolt,
                         ),
-                        const SizedBox(width: 10),
+                      ],
+                    ),
+                  ),
+                ),
+                SliverToBoxAdapter(
+                  child: Padding(
+                    padding: const EdgeInsets.fromLTRB(16, 10, 16, 0),
+                    child: Row(
+                      children: [
                         _metricCard(
                           'Body Temp',
                           provider.bodyTemp.toStringAsFixed(1),
                           '°C',
                           AppTheme.accentOrange,
                           Icons.thermostat,
+                        ),
+                        const SizedBox(width: 10),
+                        _metricCard(
+                          'SpO₂',
+                          provider.hasSpo2Reading
+                              ? provider.spo2.toStringAsFixed(0)
+                              : '--',
+                          '%',
+                          AppTheme.accentPurple,
+                          Icons.air,
                         ),
                       ],
                     ),
@@ -356,7 +374,8 @@ class _MonitorScreenState extends State<MonitorScreen> {
     );
   }
 
-  Widget _buildAppBar() {
+  Widget _buildAppBar(AppProvider provider) {
+    final isExercise = provider.isExerciseMode;
     return Padding(
       padding: const EdgeInsets.fromLTRB(16, 12, 16, 4),
       child: Row(
@@ -396,6 +415,31 @@ class _MonitorScreenState extends State<MonitorScreen> {
             ],
           ),
           const Spacer(),
+          if (isExercise)
+            Container(
+              margin: const EdgeInsets.only(right: 8),
+              padding: const EdgeInsets.symmetric(horizontal: 8, vertical: 5),
+              decoration: BoxDecoration(
+                color: const Color(0xFF00E676).withOpacity(0.12),
+                borderRadius: BorderRadius.circular(8),
+                border: Border.all(
+                  color: const Color(0xFF00E676).withOpacity(0.4),
+                ),
+              ),
+              child: Row(
+                mainAxisSize: MainAxisSize.min,
+                children: const [
+                  Icon(Icons.fitness_center,
+                      color: Color(0xFF00E676), size: 12),
+                  SizedBox(width: 4),
+                  Text('Exercise',
+                      style: TextStyle(
+                          color: Color(0xFF00E676),
+                          fontSize: 10,
+                          fontWeight: FontWeight.w600)),
+                ],
+              ),
+            ),
           DataSourceBadge(showIcon: true),
         ],
       ),
